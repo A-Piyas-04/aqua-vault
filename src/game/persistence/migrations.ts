@@ -1,6 +1,7 @@
 import { CONFIG } from '../model/config';
-import type { Building, GameState } from '../model/types';
+import type { Building, GameState, ScenarioId, ToolId } from '../model/types';
 import { createBuilding, createInitialState } from '../model/world';
+import { isScenarioId } from '../content/scenarios';
 
 export type LoadResult =
   | { ok: true; state: GameState; repaired: boolean }
@@ -27,9 +28,14 @@ export function migrateSave(raw: unknown): LoadResult {
     return { ok: false, reason: 'future', message: `Save is from a newer version (${version}) of the game` };
   }
 
-  const fresh = createInitialState(typeof data.seed === 'number' ? data.seed : undefined);
+  const sid: ScenarioId = isScenarioId(data.scenarioId) ? data.scenarioId : 'village';
+  const fresh = createInitialState(typeof data.seed === 'number' ? data.seed : undefined, sid);
   let repaired = false;
   const s = data as unknown as GameState;
+  if (!isScenarioId(data.scenarioId)) {
+    s.scenarioId = sid;
+    repaired = true;
+  }
   if (!s.grid || typeof s.grid !== 'object') return { ok: false, reason: 'corrupt', message: 'Save has no map' };
   const n = fresh.grid.w * fresh.grid.h;
   if (s.grid.w !== fresh.grid.w || s.grid.h !== fresh.grid.h || !Array.isArray(s.grid.terrain) || s.grid.terrain.length !== n) {
@@ -105,7 +111,7 @@ export function migrateSave(raw: unknown): LoadResult {
     materials: finiteOr(res.materials, fresh.resources.materials, 0),
     xp: finiteOr(res.xp, 0, 0),
     energy: finiteOr(res.energy, 0, 0),
-    freeCanals: finiteOr(res.freeCanals, 0, 0, CONFIG.progression.freeCanals),
+    freeCanals: finiteOr(res.freeCanals, 0, 0, Math.max(CONFIG.progression.freeCanals, fresh.resources.freeCanals)),
   };
   s.achievements = Array.isArray(s.achievements) ? s.achievements.filter((a) => typeof a === 'string') : [];
   s.nextBuildingId = Math.max(finiteOr(s.nextBuildingId, 1), ...s.buildings.map((b) => b.id + 1));
@@ -123,6 +129,17 @@ export function migrateSave(raw: unknown): LoadResult {
   s.lastCleanTick = finiteOr(s.lastCleanTick, -1e9);
   s.settings = { ...fresh.settings, ...(s.settings ?? {}) };
   s.flags = { rain: true, sinks: true };
+  s.scenarioId = sid;
+  if (s.allowedTools !== null && s.allowedTools !== undefined) {
+    if (!Array.isArray(s.allowedTools)) {
+      s.allowedTools = fresh.allowedTools;
+      repaired = true;
+    } else {
+      s.allowedTools = (s.allowedTools as unknown[]).filter((t): t is ToolId => typeof t === 'string') as ToolId[];
+    }
+  } else {
+    s.allowedTools = fresh.allowedTools;
+  }
   s.version = CONFIG.saveVersion;
   return { ok: true, state: s, repaired };
 }

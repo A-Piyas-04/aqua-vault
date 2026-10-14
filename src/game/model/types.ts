@@ -148,6 +148,8 @@ export interface Settings {
   tutorialDone: boolean;
 }
 
+export type ScenarioId = 'lesson-1' | 'lesson-2' | 'lesson-3' | 'lesson-4' | 'lesson-5' | 'village';
+
 export interface GameState {
   version: number;
   seed: number;
@@ -170,6 +172,10 @@ export interface GameState {
   settings: Settings;
   /** Sandbox options for tests / dev; persisted. */
   flags: { rain: boolean; sinks: boolean };
+  /** Current map. Missing on old saves; migrations fill `village`. */
+  scenarioId: ScenarioId;
+  /** When set, only these tools (plus inspect/erase) may be used. Null = XP unlocks. */
+  allowedTools: ToolId[] | null;
 }
 
 export type Command =

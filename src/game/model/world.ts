@@ -1,6 +1,6 @@
 import { CONFIG } from './config';
-import type { Building, BuildingType, GameState, Grid, Terrain } from './types';
-import { authorWorld } from '../content/worldSeed';
+import type { Building, BuildingType, GameState, Grid, ScenarioId, Terrain } from './types';
+import { getScenario } from '../content/scenarios';
 import { seedToState } from '../sim/rng';
 
 export const DEFAULT_SEED = 1527;
@@ -77,8 +77,8 @@ export function unstampBuilding(grid: Grid, b: Building): void {
   }
 }
 
-export function createInitialState(seed = DEFAULT_SEED): GameState {
-  const world = authorWorld(CONFIG.grid.w, CONFIG.grid.h, CONFIG.water.streamRunTilt);
+export function createInitialState(seed = DEFAULT_SEED, scenarioId: ScenarioId = 'village'): GameState {
+  const world = getScenario(scenarioId);
   const grid = createGrid(world.terrain, world.elevation, world.w, world.h, world.bed);
   const buildings: Building[] = [];
   let nextId = 1;
@@ -88,13 +88,26 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
     buildings.push(b);
     stampBuilding(grid, b);
   }
-  const field = createBuilding(nextId++, 'field', world.starterField.x, world.starterField.y);
-  field.builtin = true;
-  buildings.push(field);
-  stampBuilding(grid, field);
+  for (const spec of world.starterBuildings) {
+    const b = createBuilding(nextId++, spec.type, spec.x, spec.y);
+    b.builtin = spec.builtin;
+    if (spec.progress !== undefined) b.progress = spec.progress;
+    if (spec.water !== undefined) b.water = spec.water;
+    buildings.push(b);
+    stampBuilding(grid, b);
+  }
+  for (const c of world.canals) {
+    const i = idx(grid, c.x, c.y);
+    if (i >= 0 && i < grid.canal.length) grid.canal[i] = 1;
+  }
 
-  // A little standing water in the catchment so the first stroke reacts immediately.
-  for (let i = 0; i < grid.terrain.length; i++) if (grid.terrain[i] === 'source') grid.water[i] = 6;
+  let standing = 0;
+  for (let i = 0; i < grid.terrain.length; i++) {
+    if (grid.terrain[i] === 'source') {
+      grid.water[i] = world.sourceWater;
+      standing += world.sourceWater;
+    }
+  }
 
   return {
     version: CONFIG.saveVersion,
@@ -105,13 +118,13 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
     buildings,
     nextBuildingId: nextId,
     resources: {
-      materials: CONFIG.progression.startMaterials,
-      xp: 0,
+      materials: world.startMaterials,
+      xp: world.startXp,
       energy: 0,
-      freeCanals: CONFIG.progression.freeCanals,
+      freeCanals: world.freeCanals,
     },
     achievements: [],
-    weather: { mode: 'rain', remaining: 1200, duration: 1200 },
+    weather: { ...world.weather },
     ledger: {
       rainAdded: 0,
       evaporation: 0,
@@ -120,7 +133,7 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
       discharged: 0,
       treatmentLoss: 0,
       spill: 0,
-      total: 24,
+      total: standing,
       energyGenerated: 0,
       energyUsed: 0,
     },
@@ -130,6 +143,8 @@ export function createInitialState(seed = DEFAULT_SEED): GameState {
     lastCleanTick: -1e9,
     settings: { sound: false, reducedMotion: false, speed: 1, tutorialDone: false },
     flags: { rain: true, sinks: true },
+    scenarioId: world.id,
+    allowedTools: world.allowedTools ? [...world.allowedTools] : null,
   };
 }
 

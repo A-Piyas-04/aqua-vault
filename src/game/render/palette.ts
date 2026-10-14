@@ -45,3 +45,27 @@ export function hash01(i: number, salt = 0): number {
   x ^= x >>> 16;
   return (x >>> 0) / 4294967296;
 }
+
+function fade(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/** Value noise in [0,1). Smooth across neighbouring cells so the tile grid disappears. */
+export function noise2(x: number, y: number, salt = 0): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = fade(xf);
+  const v = fade(yf);
+  const n00 = hash01(xi * 73856093 + yi * 19349663, salt);
+  const n10 = hash01((xi + 1) * 73856093 + yi * 19349663, salt);
+  const n01 = hash01(xi * 73856093 + (yi + 1) * 19349663, salt);
+  const n11 = hash01((xi + 1) * 73856093 + (yi + 1) * 19349663, salt);
+  return n00 * (1 - u) * (1 - v) + n10 * u * (1 - v) + n01 * (1 - u) * v + n11 * u * v;
+}
+
+/** Two-octave noise for ground mottling. */
+export function fbm2(x: number, y: number, salt = 0): number {
+  return noise2(x, y, salt) * 0.62 + noise2(x * 2.17, y * 2.17, salt + 11) * 0.38;
+}

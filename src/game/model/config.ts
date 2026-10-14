@@ -5,7 +5,7 @@ import type { BuildingTypePlaceable, WeatherMode } from './types';
  * See docs/13_BALANCING_DATA.md.
  */
 export const CONFIG = {
-  saveVersion: 1,
+  saveVersion: 2,
   grid: { w: 28, h: 18 },
   dt: 0.1,
   ticksPerSecond: 10,

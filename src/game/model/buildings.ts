@@ -61,6 +61,7 @@ function footprintCells(g: Grid, x: number, y: number, w: number, h: number): nu
 
 /** True when the building type is unlocked at the player's current level. */
 export function isUnlocked(state: GameState, key: keyof typeof CONFIG.unlockLevel): boolean {
+  if (state.allowedTools) return state.allowedTools.includes(key);
   return levelForXp(state.resources.xp) >= CONFIG.unlockLevel[key];
 }
 

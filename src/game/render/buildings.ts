@@ -77,23 +77,37 @@ function drawField(d: DrawCtx, b: Building, x: number, y: number, w: number, h: 
   const { ctx, ts, time } = d;
   const moist = Math.min(1, b.water / CONFIG.field.moistureCap);
   const stage = fieldStage(b);
-  // Bund (raised earthen border).
-  ctx.fillStyle = '#D6B088';
-  roundRect(ctx, x + ts * 0.04, y + ts * 0.04, w - ts * 0.08, h - ts * 0.08, ts * 0.16);
+  // Bund: outer shadow, packed earth, inner highlight so the paddy reads as a raised bed.
+  ctx.fillStyle = 'rgba(40,25,10,0.22)';
+  roundRect(ctx, x + ts * 0.06, y + ts * 0.1, w - ts * 0.08, h - ts * 0.1, ts * 0.18);
   ctx.fill();
-  const ix = x + ts * 0.14;
-  const iy = y + ts * 0.14;
-  const iw = w - ts * 0.28;
-  const ih = h - ts * 0.28;
-  ctx.fillStyle = mix('#C29A62', '#5E4A36', moist);
-  roundRect(ctx, ix, iy, iw, ih, ts * 0.1);
+  ctx.fillStyle = mix('#C9A07A', '#A87850', 0.25);
+  roundRect(ctx, x + ts * 0.03, y + ts * 0.03, w - ts * 0.06, h - ts * 0.06, ts * 0.16);
   ctx.fill();
-  if (moist > 0.15) {
-    ctx.fillStyle = `rgba(119,191,212,${0.15 + moist * 0.35})`;
-    roundRect(ctx, ix, iy, iw, ih, ts * 0.1);
+  ctx.fillStyle = 'rgba(255,236,210,0.35)';
+  ctx.fillRect(x + ts * 0.08, y + ts * 0.05, w - ts * 0.16, ts * 0.05);
+  const ix = x + ts * 0.16;
+  const iy = y + ts * 0.16;
+  const iw = w - ts * 0.32;
+  const ih = h - ts * 0.32;
+  const dry = mix('#C9A062', '#8A6840', 0.35);
+  const wet = mix('#5A4634', '#3E4A38', 0.4);
+  const g = ctx.createLinearGradient(ix, iy, ix, iy + ih);
+  g.addColorStop(0, mix(dry, wet, moist * 0.7));
+  g.addColorStop(1, mix(dry, wet, Math.min(1, moist * 1.1)));
+  ctx.fillStyle = g;
+  roundRect(ctx, ix, iy, iw, ih, ts * 0.08);
+  ctx.fill();
+  if (moist > 0.12) {
+    ctx.fillStyle = `rgba(90,170,190,${0.12 + moist * 0.38})`;
+    roundRect(ctx, ix, iy, iw, ih, ts * 0.08);
     ctx.fill();
+    ctx.strokeStyle = `rgba(210,235,245,${0.15 + moist * 0.25})`;
+    ctx.lineWidth = Math.max(1, ts * 0.03);
+    roundRect(ctx, ix + 1, iy + 1, iw - 2, ih - 2, ts * 0.08);
+    ctx.stroke();
   } else {
-    ctx.strokeStyle = 'rgba(90,60,30,0.45)';
+    ctx.strokeStyle = 'rgba(90,60,30,0.4)';
     ctx.lineWidth = Math.max(0.7, ts * 0.025);
     ctx.beginPath();
     for (let k = 0; k < 5; k++) {
@@ -105,41 +119,36 @@ function drawField(d: DrawCtx, b: Building, x: number, y: number, w: number, h: 
     }
     ctx.stroke();
   }
-  // Plants in rows; height and colour by stage, gentle sway.
   const progressInStage = (b.progress % CONFIG.field.ticksPerStage) / CONFIG.field.ticksPerStage;
-  const grow = stage >= 3 ? 1 : stage + Math.min(1, progressInStage * 1.15);
-  if (grow > 0.15) {
+  const grow = stage >= 3 ? 3 : stage + Math.min(1, progressInStage * 1.15);
+  if (grow > 0.12) {
     const rows = 4;
     const cols = 5;
     const color = stage >= 3 ? PALETTE.riceGold : stage >= 2 ? PALETTE.freshGreen : '#9CCB6E';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1, ts * (0.04 + Math.min(grow, 3) * 0.012));
-    const height = ts * (0.08 + Math.min(grow, 3) * 0.1);
-    const sway = d.reducedMotion ? 0 : Math.sin(time * 1.6 + b.id) * ts * 0.03;
-    ctx.beginPath();
+    const height = ts * (0.1 + Math.min(grow, 3) * 0.11);
+    ctx.lineCap = 'round';
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const px = ix + ((c + 0.5) / cols) * iw;
-        const py = iy + ((r + 0.8) / rows) * ih;
+        const py = iy + ((r + 0.82) / rows) * ih;
+        const sway = d.reducedMotion ? 0 : Math.sin(time * 1.5 + b.id + r * 0.4 + c * 0.3) * ts * (0.02 + Math.min(grow, 3) * 0.012);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, ts * (0.035 + Math.min(grow, 3) * 0.012));
+        ctx.beginPath();
         ctx.moveTo(px, py);
-        ctx.lineTo(px - ts * 0.05 + sway, py - height);
+        ctx.quadraticCurveTo(px - ts * 0.02 + sway * 0.4, py - height * 0.5, px - ts * 0.05 + sway, py - height);
         ctx.moveTo(px, py);
-        ctx.lineTo(px + ts * 0.05 + sway, py - height * 0.9);
-      }
-    }
-    ctx.stroke();
-    if (stage >= 3) {
-      ctx.fillStyle = '#E9CB73';
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const px = ix + ((c + 0.5) / cols) * iw + sway;
-          const py = iy + ((r + 0.8) / rows) * ih - height;
+        ctx.quadraticCurveTo(px + ts * 0.02 + sway * 0.4, py - height * 0.45, px + ts * 0.05 + sway, py - height * 0.92);
+        ctx.stroke();
+        if (stage >= 3) {
+          ctx.fillStyle = '#E9CB73';
           ctx.beginPath();
-          ctx.ellipse(px + ts * 0.03, py + ts * 0.02, ts * 0.04, ts * 0.07, 0.6, 0, Math.PI * 2);
+          ctx.ellipse(px + sway + ts * 0.02, py - height, ts * 0.04, ts * 0.07, 0.5, 0, Math.PI * 2);
           ctx.fill();
         }
       }
     }
+    ctx.lineCap = 'butt';
   }
   if (isRipe(b)) badge(d, x + w - ts * 0.25, y + ts * 0.2, PALETTE.riceGold, 'sickle');
 }
@@ -199,10 +208,25 @@ function drawReservoir(d: DrawCtx, b: Building, x: number, y: number, w: number,
   ctx.fill();
   if (level > 0.005) {
     const shore = (1 - Math.min(1, level)) * ts * 0.35;
-    ctx.fillStyle = waterColor(level);
-    roundRect(ctx, x + inset + shore, y + inset + shore, w - (inset + shore) * 2, h - (inset + shore) * 2, ts * 0.22);
+    const wx = x + inset + shore;
+    const wy = y + inset + shore;
+    const ww = w - (inset + shore) * 2;
+    const wh = h - (inset + shore) * 2;
+    const grad = ctx.createRadialGradient(wx + ww * 0.45, wy + wh * 0.4, ts * 0.1, wx + ww * 0.5, wy + wh * 0.55, Math.max(ww, wh) * 0.7);
+    grad.addColorStop(0, mix(PALETTE.rain, PALETTE.cleanWater, 0.35));
+    grad.addColorStop(0.55, waterColor(level));
+    grad.addColorStop(1, PALETTE.deepWater);
+    ctx.fillStyle = grad;
+    roundRect(ctx, wx, wy, ww, wh, ts * 0.22);
     ctx.fill();
-    waves(d, x + inset + shore, y + inset + shore, w - (inset + shore) * 2, h - (inset + shore) * 2, b.id, Math.min(1, b.flow + 0.2));
+    ctx.fillStyle = 'rgba(220,238,245,0.22)';
+    roundRect(ctx, wx + ww * 0.08, wy + wh * 0.08, ww * 0.45, wh * 0.22, ts * 0.12);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = Math.max(1, ts * 0.04);
+    roundRect(ctx, wx + 1, wy + 1, ww - 2, wh - 2, ts * 0.2);
+    ctx.stroke();
+    waves(d, wx, wy, ww, wh, b.id, Math.min(1, b.flow + 0.2));
   }
   // Level gauge on the rim.
   ctx.fillStyle = 'rgba(30,30,30,0.35)';
@@ -253,21 +277,34 @@ function drawPond(d: DrawCtx, b: Building, x: number, y: number, w: number, h: n
     const rx = w / 2 - ts * 0.22 - shrink;
     const ry = h / 2 - ts * 0.22 - shrink;
     const murk = Math.max(0, 0.6 - b.quality) * 0.9;
-    ctx.fillStyle = waterColor(level, murk);
+    const grad = ctx.createRadialGradient(x + w * 0.42, y + h * 0.38, ts * 0.15, x + w / 2, y + h / 2, Math.max(rx, ry));
+    grad.addColorStop(0, mix(PALETTE.rain, PALETTE.cleanWater, 0.4));
+    grad.addColorStop(0.55, waterColor(level, murk));
+    grad.addColorStop(1, mix(PALETTE.deepWater, '#1A4A58', 0.3));
+    ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.ellipse(x + w / 2, y + h / 2, Math.max(1, rx), Math.max(1, ry), 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = 'rgba(220,238,245,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.42, y + h * 0.38, rx * 0.45, ry * 0.22, -0.4, 0, Math.PI * 2);
+    ctx.fill();
     if (level > 0.3) {
-      // Lily pads.
-      ctx.fillStyle = '#5E9F55';
-      for (let k = 0; k < 4; k++) {
+      for (let k = 0; k < 5; k++) {
         const a = hash01(b.id, k) * Math.PI * 2;
-        const px = x + w / 2 + Math.cos(a) * rx * 0.75;
-        const py = y + h / 2 + Math.sin(a) * ry * 0.75;
+        const px = x + w / 2 + Math.cos(a) * rx * 0.72;
+        const py = y + h / 2 + Math.sin(a) * ry * 0.72;
+        ctx.fillStyle = mix('#4E8A48', '#6FB45A', hash01(b.id, k + 2));
         ctx.beginPath();
-        ctx.arc(px, py, ts * 0.13, 0.3, Math.PI * 2 - 0.2);
+        ctx.arc(px, py, ts * 0.14, 0.28, Math.PI * 2 - 0.18);
         ctx.lineTo(px, py);
         ctx.fill();
+        if (hash01(b.id, k + 3) < 0.45) {
+          ctx.fillStyle = PALETTE.shapla;
+          ctx.beginPath();
+          ctx.arc(px + ts * 0.02, py - ts * 0.02, ts * 0.04, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
     if (b.stocked) {

@@ -1,6 +1,6 @@
 import { CONFIG } from './model/config';
 import { canDigCanal, STORAGE_TYPES, storageCapacity, validatePlacement, isUnlocked } from './model/buildings';
-import type { BuildingTypePlaceable, Command, GameEvent, GameState, ToolId } from './model/types';
+import type { BuildingTypePlaceable, Command, GameEvent, GameState, ScenarioId, ToolId } from './model/types';
 import { createInitialState, getBuilding, idx } from './model/world';
 import { applyCommand } from './sim/commands';
 import { stepGame, massTolerance } from './sim/tick';
@@ -9,11 +9,12 @@ import { energyCapacity } from './sim/power';
 import { dayPhase } from './sim/weather';
 import { ACHIEVEMENTS, MILESTONES } from './content/milestones';
 import { TOOL_INFO } from './content/strings';
-import { authorWorld } from './content/worldSeed';
+import { nextScenario, SCENARIO_ORDER } from './content/scenarios';
+import { currentLessonStep, JOURNAL, journalUnlockedIds, lessonForScenario, type LessonDef } from './content/lessons';
 import { Renderer, type Preview } from './render/renderer';
 import { lineCells } from './input/bresenham';
 import { canvasToCell, clampCamera, clientToCanvas, computeView, type Camera, type ViewMetrics } from './input/coordinateMapping';
-import { LocalSaveRepository, type SaveRepository } from './persistence/storage';
+import { LocalSaveRepository, type PlayerProfile, type SaveRepository } from './persistence/storage';
 import { SoundEngine } from './audio/sound';
 import { inspectBuilding, inspectTile, type InspectAction, type InspectInfo } from './inspect';
 
@@ -47,7 +48,18 @@ export interface HudSnapshot {
   inspect: InspectInfo | null;
   achievements: string[];
   toasts: Toast[];
-  tutorial: { step: number; text: string; bn?: string } | null;
+  tutorial: {
+    step: number;
+    total: number;
+    title: string;
+    text: string;
+    bn?: string;
+    careful?: string[];
+    pulseTool?: ToolId;
+    lessonTitle: string;
+    finished: boolean;
+    nextId: ScenarioId | null;
+  } | null;
   settings: GameState['settings'];
   showHeights: boolean;
   canUndo: boolean;
@@ -57,6 +69,11 @@ export interface HudSnapshot {
   saveError: string;
   milestonesDone: number;
   loadMessage: string;
+  scenarioId: ScenarioId;
+  allowedTools: ToolId[] | null;
+  completedLessons: string[];
+  unlockedJournal: string[];
+  journal: { id: string; title: string; bn?: string; locked: boolean; replay?: ScenarioId }[];
 }
 
 const TICK_MS = 1000 / CONFIG.ticksPerSecond;
@@ -110,19 +127,22 @@ export class GameController {
   private loadMessage = '';
   private ambientTimer = 0;
   private cleanup: (() => void)[] = [];
-  private readonly tutorialPath = authorWorld().tutorialPath;
+  profile: PlayerProfile;
 
   constructor() {
-    const loaded = this.repo.load();
+    this.profile = this.repo.loadProfile();
+    const sid = this.profile.currentScenario;
+    const loaded = this.repo.load(sid);
     if (loaded.ok) {
       this.state = loaded.state;
       this.loadMessage = loaded.repaired ? 'Your saved village was repaired after a small problem.' : '';
     } else {
-      this.state = createInitialState();
+      this.state = createInitialState(undefined, sid);
       if (loaded.reason === 'future') this.loadMessage = `${loaded.message}. Started a new world; the newer save is untouched until you save.`;
       else if (loaded.reason === 'corrupt') this.loadMessage = 'The saved village could not be read, so a new world was started.';
     }
-    if (this.state.settings.tutorialDone) this.tool = 'inspect';
+    this.tool = this.state.scenarioId === 'village' && this.state.settings.tutorialDone ? 'inspect' : 'inspect';
+    this.unlockCurrentLessonJournal();
     this.sound.setEnabled(false);
     this.snapshot = this.buildSnapshot();
   }
@@ -188,6 +208,7 @@ export class GameController {
     const dt = Math.min(250, now - this.lastFrame);
     this.lastFrame = now;
     const hidden = typeof document !== 'undefined' && document.hidden;
+    this.applyLessonWeather();
     if (!this.paused && !hidden) this.acc += dt * this.state.settings.speed;
     let steps = 0;
     const maxSteps = CONFIG.maxCatchUpTicks * this.state.settings.speed;
@@ -207,10 +228,14 @@ export class GameController {
         selectedId: this.selectedId,
         selectedCell: this.selectedCell,
         keyboardCell: this.keyboardCell,
-        showHeights: this.showHeights,
+        showHeights: this.showHeights || !!this.activeStep()?.showHeights,
         reducedMotion: this.state.settings.reducedMotion,
-        tutorialPath: this.tutorialStep() === 0 ? this.tutorialPath : null,
-        highlightZone: this.tutorialStep() === 3 ? { x: 17, y: 3, w: 5, h: 5 } : null,
+        tutorialPath: this.activeStep()?.highlightPath ?? null,
+        highlightZone: this.activeStep()?.highlightZone ?? null,
+        highlightCells: this.activeStep()?.highlightCells,
+        pointer: this.activeStep()?.pointer ?? null,
+        showGrid: this.tool !== 'inspect',
+        buildTool: this.tool !== 'inspect',
       });
     }
 
@@ -264,6 +289,7 @@ export class GameController {
           this.toast('achievement', def?.bn ? `${def.bn} · ${def.title}` : def?.title ?? e.id, `+${e.xp} XP${e.materials ? ` · +${e.materials} materials` : ''}`);
           this.sound.play('chime');
           this.celebrateFor(e.id);
+          this.unlockJournalFromAchievements();
           this.save();
           break;
         }
@@ -367,6 +393,10 @@ export class GameController {
 
   toolLocked(tool: ToolId): number {
     if (tool === 'inspect' || tool === 'erase') return 0;
+    if (this.state.allowedTools) {
+      if (this.state.allowedTools.includes(tool)) return 0;
+      return -1;
+    }
     const key = tool as keyof typeof CONFIG.unlockLevel;
     if (!(key in CONFIG.unlockLevel)) return 0;
     return isUnlocked(this.state, key) ? 0 : CONFIG.unlockLevel[key];
@@ -420,9 +450,109 @@ export class GameController {
   }
 
   skipTutorial() {
-    this.state.settings.tutorialDone = true;
+    this.finishLesson(true);
+    const next = nextScenario(this.state.scenarioId);
+    if (next) {
+      this.toast('info', 'Lesson skipped', 'You can replay it from the Journal.');
+      this.loadScenario(next, false);
+    } else {
+      this.toast('info', 'Tips complete', 'Open the Journal anytime to re-read a lesson.');
+      this.emit();
+    }
+  }
+
+  continueLesson() {
+    this.finishLesson(true);
+    const next = nextScenario(this.state.scenarioId);
+    if (next) this.loadScenario(next, false);
+    else {
+      this.toast('info', 'The village awaits', 'Open Levels if you want to replay a lesson.');
+      this.emit();
+    }
+  }
+
+  loadScenario(id: ScenarioId, fresh: boolean) {
     this.save();
+    this.profile.currentScenario = id;
+    this.persistProfile();
+    if (fresh) this.repo.clear(id);
+    const loaded = fresh ? { ok: false as const, reason: 'empty' as const, message: '' } : this.repo.load(id);
+    if (loaded.ok) {
+      this.state = loaded.state;
+    } else {
+      this.state = createInitialState(this.state.seed, id);
+    }
+    this.prevWater = null;
+    this.selectedId = -1;
+    this.selectedCell = -1;
+    this.tool = 'inspect';
+    this.paused = false;
+    this.camera = { zoom: 1, panX: 0, panY: 0 };
+    this.unlockCurrentLessonJournal();
+    this.save();
+    this.toast('info', this.scenarioTitle(id), fresh ? 'Starting this lesson from the beginning.' : 'Welcome back.');
     this.emit();
+  }
+
+  replayLesson(id: ScenarioId) {
+    this.loadScenario(id, true);
+  }
+
+  private scenarioTitle(id: ScenarioId): string {
+    return lessonForScenario(id)?.title ?? 'The Village';
+  }
+
+  private finishLesson(markDone: boolean) {
+    const id = this.state.scenarioId;
+    if (markDone) this.state.settings.tutorialDone = true;
+    if (!this.profile.completedLessons.includes(id)) this.profile.completedLessons.push(id);
+    if (!this.profile.unlockedJournal.includes(id)) this.profile.unlockedJournal.push(id);
+    this.unlockJournalFromAchievements();
+    this.persistProfile();
+    this.save();
+    if (this.renderer) {
+      const g = this.state.grid;
+      this.renderer.celebrate(this.state, idx(g, Math.floor(g.w / 2), Math.floor(g.h / 2)), this.view, this.state.settings.reducedMotion);
+    }
+  }
+
+  private unlockCurrentLessonJournal() {
+    const id = this.state.scenarioId;
+    if (!this.profile.unlockedJournal.includes(id)) {
+      this.profile.unlockedJournal.push(id);
+      this.persistProfile();
+    }
+  }
+
+  private unlockJournalFromAchievements() {
+    const extra = journalUnlockedIds(this.profile.completedLessons, this.state.achievements);
+    for (const id of extra) {
+      if (!this.profile.unlockedJournal.includes(id)) this.profile.unlockedJournal.push(id);
+    }
+    this.persistProfile();
+  }
+
+  private persistProfile() {
+    this.repo.saveProfile(this.profile);
+  }
+
+  private applyLessonWeather() {
+    if (this.state.scenarioId !== 'lesson-4') return;
+    const step = this.activeGuide();
+    if (!step || step.index < 3) return;
+    if (this.state.weather.mode !== 'dry') {
+      this.state.weather = { mode: 'dry', remaining: 6000, duration: 6000 };
+    }
+  }
+
+  private activeGuide(): { lesson: LessonDef; index: number; finished: boolean } | null {
+    return currentLessonStep(this.state, this.state.settings.tutorialDone, this.tool);
+  }
+
+  private activeStep() {
+    const g = this.activeGuide();
+    if (!g || g.finished) return undefined;
+    return g.lesson.steps[g.index];
   }
 
   zoomBy(factor: number, cx = this.cssW / 2, cy = this.cssH / 2) {
@@ -450,17 +580,18 @@ export class GameController {
 
   newWorld() {
     const settings = { ...this.state.settings, tutorialDone: false };
-    this.repo.clear();
-    this.state = createInitialState(this.state.seed);
+    const id = this.state.scenarioId;
+    this.repo.clear(id);
+    this.state = createInitialState(this.state.seed, id);
     this.state.settings = settings;
     this.prevWater = null;
     this.selectedId = -1;
     this.selectedCell = -1;
-    this.tool = 'canal';
+    this.tool = 'inspect';
     this.paused = false;
     this.toasts = [];
     this.save();
-    this.toast('info', 'A new monsoon begins', 'The village is waiting for water');
+    this.toast('info', 'A new monsoon begins', 'The landscape is waiting for water');
   }
 
   save(): boolean {
@@ -706,9 +837,9 @@ export class GameController {
     if (this.state.buildings.length > before) {
       const nb = this.state.buildings[this.state.buildings.length - 1];
       this.selectedId = nb.id;
-      if (nb.type === 'reservoir' && !this.state.settings.tutorialDone) {
-        this.state.settings.tutorialDone = true;
-        this.toast('info', 'Tips complete', 'Open Goals for the next milestones');
+      if (nb.type === 'reservoir' && this.state.scenarioId === 'village' && !this.state.settings.tutorialDone) {
+        this.finishLesson(false);
+        this.toast('info', 'Tips complete', 'Open the Journal or Goals for what comes next');
       }
     }
     void keyboard;
