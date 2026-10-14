@@ -28,10 +28,6 @@ export interface LessonDef {
   careful: string[];
 }
 
-function idx(s: GameState, x: number, y: number): number {
-  return y * s.grid.w + x;
-}
-
 function wetCanal(s: GameState): boolean {
   return s.grid.canal.some((c, i) => c === 1 && s.grid.water[i] > 0.3);
 }
@@ -65,7 +61,7 @@ export const LESSONS: LessonDef[] = [
           { x: 2, y: 1 },
         ],
         pointer: { x: 1, y: 1 },
-        done: (s) => s.tick >= 8,
+        done: (s) => s.tick >= 40,
       },
       {
         title: 'Choose Canal',
@@ -122,7 +118,7 @@ export const LESSONS: LessonDef[] = [
         text: 'Press H (or use Settings) to show ground heights. The ridge in the middle is taller than the spring.',
         showHeights: true,
         highlightZone: { x: 4, y: 0, w: 3, h: 5 },
-        done: (s) => s.tick >= 6,
+        done: (s) => s.tick >= 30,
       },
       {
         title: 'The short path is a trap',
@@ -482,5 +478,3 @@ export function journalUnlockedIds(completedLessons: string[], achievements: str
   }
   return ids;
 }
-
-void idx;

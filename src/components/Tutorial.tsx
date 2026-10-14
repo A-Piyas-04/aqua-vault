@@ -3,19 +3,38 @@
 import type { GameController, HudSnapshot } from '@/game/controller';
 
 export default function Tutorial({ snap, controller }: { snap: HudSnapshot; controller: GameController }) {
-  if (!snap.tutorial) return null;
+  const t = snap.tutorial;
+  if (!t) return null;
   return (
-    <div className="tutorial" role="note">
-      <div className="tut-step" aria-hidden="true">
-        {snap.tutorial.step + 1}/4
+    <div className={`tutorial ${t.finished ? 'done' : ''}`} role="note">
+      <div className="tut-kicker">
+        <span className="tut-step" aria-hidden="true">
+          {t.finished ? 'Done' : `Step ${t.step + 1}/${t.total}`}
+        </span>
+        <strong className="tut-lesson">{t.lessonTitle}</strong>
       </div>
-      <p>
-        {snap.tutorial.bn ? <strong className="bn">{snap.tutorial.bn} · </strong> : null}
-        {snap.tutorial.text}
-      </p>
-      <button type="button" className="text-btn" onClick={() => controller.skipTutorial()}>
-        Skip tips
-      </button>
+      <h3>
+        {t.bn ? <span className="bn">{t.bn} · </span> : null}
+        {t.title}
+      </h3>
+      <p>{t.text}</p>
+      {t.careful?.length ? (
+        <ul className="tut-careful">
+          {t.careful.map((c) => (
+            <li key={c}>{c}</li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="tut-actions">
+        {t.finished ? (
+          <button type="button" className="action" onClick={() => controller.continueLesson()}>
+            {t.nextId ? 'Next lesson' : 'Continue'}
+          </button>
+        ) : null}
+        <button type="button" className="text-btn" onClick={() => (t.finished ? controller.dismissTutorial() : controller.skipTutorial())}>
+          {t.finished ? 'Stay here' : 'Skip lesson'}
+        </button>
+      </div>
     </div>
   );
 }

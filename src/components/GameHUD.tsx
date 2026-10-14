@@ -7,7 +7,7 @@ import { Icon } from './Icons';
 interface Props {
   snap: HudSnapshot;
   controller: GameController;
-  onOpen: (p: 'settings' | 'goals') => void;
+  onOpen: (p: 'settings' | 'goals' | 'journal' | 'levels') => void;
 }
 
 export default function GameHUD({ snap, controller, onOpen }: Props) {
@@ -67,6 +67,12 @@ export default function GameHUD({ snap, controller, onOpen }: Props) {
         </button>
         <button type="button" className="icon-btn wide-only-flex" onClick={() => controller.setSetting('sound', !snap.settings.sound)} aria-label={snap.settings.sound ? 'Mute sound' : 'Turn sound on'} aria-pressed={snap.settings.sound}>
           <Icon name={snap.settings.sound ? 'soundOn' : 'soundOff'} />
+        </button>
+        <button type="button" className="icon-btn" onClick={() => onOpen('journal')} aria-label="Journal of lessons">
+          <Icon name="journal" />
+        </button>
+        <button type="button" className="icon-btn" onClick={() => onOpen('levels')} aria-label="Levels">
+          <Icon name="map" />
         </button>
         <button type="button" className="icon-btn goals-btn" onClick={() => onOpen('goals')} aria-label={`Goals, ${snap.milestonesDone} of 7 done`}>
           <Icon name="goals" />

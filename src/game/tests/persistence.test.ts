@@ -35,6 +35,33 @@ describe('save migration', () => {
     if (!res.ok) expect(res.reason).toBe('future');
   });
 
+  it('treats an old save without scenarioId as the village', () => {
+    const s = clone(createInitialState(4, 'village'));
+    const raw = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+    delete raw.scenarioId;
+    delete raw.allowedTools;
+    raw.version = 1;
+    const res = migrateSave(raw);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.state.scenarioId).toBe('village');
+    expect(res.state.allowedTools).toBeNull();
+    expect(res.state.grid.w).toBe(CONFIG.grid.w);
+  });
+
+  it('round-trips a lesson map at its own size', () => {
+    const s = createInitialState(8, 'lesson-1');
+    const g = s.grid;
+    stepGame(s, [{ type: 'drawCanal', cells: [idx(g, 2, 2), idx(g, 3, 2)] }]);
+    const res = migrateSave(JSON.parse(JSON.stringify(s)));
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.state.scenarioId).toBe('lesson-1');
+    expect(res.state.grid.w).toBe(12);
+    expect(res.state.grid.h).toBe(8);
+    expect(res.state.allowedTools).toContain('canal');
+  });
+
   it('rejects garbage and repairs recoverable corruption', () => {
     expect(migrateSave(null).ok).toBe(false);
     expect(migrateSave({ hello: 1 }).ok).toBe(false);

@@ -169,6 +169,19 @@ const ICONS: Record<string, ReactElement> = {
       <path d="M8 11V8a4 4 0 018 0v3" />
     </g>
   ),
+  journal: (
+    <g {...P}>
+      <path d="M6 4h11a2 2 0 012 2v14H8a2 2 0 01-2-2V4z" />
+      <path d="M6 18a2 2 0 012-2h11" />
+      <path d="M9 8h7M9 12h5" />
+    </g>
+  ),
+  map: (
+    <g {...P}>
+      <path d="M4 6l5-2 6 2 5-2v14l-5 2-6-2-5 2z" />
+      <path d="M9 4v14M15 6v14" />
+    </g>
+  ),
   drop: (
     <g {...P}>
       <path d="M12 3c3 4.5 5 7.2 5 10a5 5 0 01-10 0c0-2.8 2-5.5 5-10z" />

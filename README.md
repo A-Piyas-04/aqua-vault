@@ -17,23 +17,25 @@ npm run start    # serve out/ locally (npx serve)
 
 ## How to play
 
-1. Rain fills the catchment (top-left). Choose **Canal** and drag from the water to the dry paddy. Water only flows downhill (press **H** to see ground heights).
+A new village starts with five short **lessons** (canal, downhill flow, gates and harvest, reservoir, power and lights). Each step completes only when you actually do the action. Open the **Journal** (book button, or **J**) to re-read any lesson you have seen, including the Careful notes. **Levels** (map button) lists the lessons and the full village.
+
+1. Rain fills the catchment. Choose **Canal** and drag from the water to the dry paddy. Water only flows downhill (press **H** to see ground heights). Uphill tiles glow red while you dig.
 2. Wait for the rice to turn gold, then **Inspect** the paddy and **Harvest** it for materials and XP.
-3. Level up to unlock the reservoir, water wheel, battery, treatment plant, house taps, fish pond, wetland, floating garden, pump and fountain. Each one only works when it is really connected to water (and power, where needed). The Inspector shows exactly what a building is missing.
+3. In the village, level up to unlock the reservoir, water wheel, battery, treatment plant, house taps, fish pond, wetland, floating garden, pump and fountain. Each one only works when it is really connected to water (and power, where needed). The Inspector shows exactly what a building is missing.
 4. The goals (flag button) run from **A, First Stream** to **G, Village in Bloom**.
 
-Controls: drag to dig, right-drag or the Erase tool to remove, Ctrl+Z to undo, wheel or pinch to zoom, drag with Inspect to pan. Keys: 1–0 select tools, P pauses, H shows heights, Esc cancels. The map is keyboard-operable too (focus it, arrows move a cursor, Enter/Space acts, Shift+arrows draws).
+Controls: drag to dig, right-drag or the Erase tool to remove, Ctrl+Z to undo, wheel or pinch to zoom, drag with Inspect to pan. Keys: 1–0 select tools, P pauses, H shows heights, J opens the Journal, Esc cancels. The map is keyboard-operable too (focus it, arrows move a cursor, Enter/Space acts, Shift+arrows draws).
 
 ## Progress checklist
 
 - [x] Next.js static export, TypeScript strict, Vitest
 - [x] Deterministic water simulation (fixed 10 Hz tick, conservative flux, seeded weather) with a per-tick mass ledger
-- [x] Hand-authored 28×18 village map with catchment, stream, basins, marsh and village
+- [x] Five guided tutorial lessons on small maps, then the hand-authored 28×18 village; Journal to re-read sequential lessons
 - [x] Canal / erase / gate / bamboo bridge tools with Bresenham drag fill and undo
 - [x] Rice paddy, reservoir, water wheel, battery, treatment plant, house taps
 - [x] Fish pond, wetland, floating garden, pump, fountain
 - [x] XP, levels, unlocks, achievements, milestones A–G
-- [x] Canvas renderer: cached terrain, animated water, rain, day/night, glow, particles, heights overlay
+- [x] Canvas renderer: noise-blended terrain, grass and vegetation, terrace relief, depth-tinted water, rain, day/night, glow, particles, heights overlay
 - [x] Responsive UI: HUD, tool dock (locked tools visible), inspector / bottom sheet, tutorial, toasts, settings, goals
 - [x] Local saves (two generations, migrations, repair, autosave, New World, Reset View)
 - [x] Opt-in procedural audio, reduced motion, favicon and Open Graph metadata
@@ -80,7 +82,7 @@ These were tuned so that the full A→G chain is reachable on the real map throu
 
 ## Known limitations
 
-- Single hand-authored map; no procedural worlds or scenario select yet.
+- Five tutorial maps plus one hand-authored village; no procedural worlds.
 - Clean water reaches homes over a simplified sealed pipe network from treatment tanks to house taps (no pressure simulation).
 - Audio is synthesized with Web Audio (no recorded samples) and is off by default.
 - `npm audit` reports advisories in dev/build-time dependencies (Vitest, PostCSS via Next). Fixing them needs major upgrades (Next 16, Vitest 5) and was deferred; none of them ship in the static output.

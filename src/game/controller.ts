@@ -9,7 +9,7 @@ import { energyCapacity } from './sim/power';
 import { dayPhase } from './sim/weather';
 import { ACHIEVEMENTS, MILESTONES } from './content/milestones';
 import { TOOL_INFO } from './content/strings';
-import { nextScenario, SCENARIO_ORDER } from './content/scenarios';
+import { nextScenario } from './content/scenarios';
 import { currentLessonStep, JOURNAL, journalUnlockedIds, lessonForScenario, type LessonDef } from './content/lessons';
 import { Renderer, type Preview } from './render/renderer';
 import { lineCells } from './input/bresenham';
@@ -141,7 +141,7 @@ export class GameController {
       if (loaded.reason === 'future') this.loadMessage = `${loaded.message}. Started a new world; the newer save is untouched until you save.`;
       else if (loaded.reason === 'corrupt') this.loadMessage = 'The saved village could not be read, so a new world was started.';
     }
-    this.tool = this.state.scenarioId === 'village' && this.state.settings.tutorialDone ? 'inspect' : 'inspect';
+    this.tool = 'inspect';
     this.unlockCurrentLessonJournal();
     this.sound.setEnabled(false);
     this.snapshot = this.buildSnapshot();
@@ -265,6 +265,7 @@ export class GameController {
       console.warn('[aqua-vault] water ledger residual', res.residual, this.state.ledger);
     }
     this.handleEvents(res.events);
+    this.noteLessonProgress();
     let wet = 0;
     for (let i = 0; i < g.canal.length; i++) if (g.canal[i] && g.water[i] > 0.15) wet++;
     if (wet > this.wetCanals) this.sound.play('plunk');
@@ -449,6 +450,11 @@ export class GameController {
     this.emit();
   }
 
+  dismissTutorial() {
+    this.finishLesson(true);
+    this.emit();
+  }
+
   skipTutorial() {
     this.finishLesson(true);
     const next = nextScenario(this.state.scenarioId);
@@ -534,6 +540,13 @@ export class GameController {
 
   private persistProfile() {
     this.repo.saveProfile(this.profile);
+  }
+
+  private noteLessonProgress() {
+    const g = this.activeGuide();
+    if (g?.finished && !this.profile.completedLessons.includes(this.state.scenarioId)) {
+      this.finishLesson(false);
+    }
   }
 
   private applyLessonWeather() {
@@ -857,8 +870,11 @@ export class GameController {
     if (tool === 'canal') {
       const c = canDigCanal(this.state, cell);
       const silent = c.reason.startsWith('Already');
-      this.preview = { cells: [cell], ok: c.ok || silent, reason: c.reason };
-      if (!c.ok && !silent) this.hint = c.reason;
+      const climb = this.canalClimbFlags([cell]);
+      const uphill = climb[0];
+      this.preview = { cells: [cell], ok: (c.ok || silent) && !uphill, reason: uphill ? "Water can't climb here" : c.reason, climb };
+      if (uphill) this.hint = "Water can't climb here";
+      else if (!c.ok && !silent) this.hint = c.reason;
       return;
     }
     if (tool === 'erase') {
@@ -880,16 +896,40 @@ export class GameController {
     this.hint = check.ok ? `${TOOL_INFO[tool].name}: ${check.cost} materials` : check.reason;
   }
 
+  private canalClimbFlags(cells: number[]): boolean[] {
+    const g = this.state.grid;
+    const wet = (i: number) => (g.canal[i] === 1 || g.terrain[i] === 'source' || g.terrain[i] === 'river' || g.terrain[i] === 'outlet') && g.water[i] > 0.08;
+    return cells.map((cell) => {
+      const e = g.elevation[cell];
+      const x = cell % g.w;
+      const y = Math.floor(cell / g.w);
+      let higherThanWet = false;
+      let sawWet = false;
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= g.w || ny >= g.h) continue;
+        const n = idx(g, nx, ny);
+        if (!wet(n) && g.canal[n] !== 1 && g.terrain[n] !== 'source' && g.terrain[n] !== 'river') continue;
+        if (wet(n)) {
+          sawWet = true;
+          if (e > g.elevation[n]) higherThanWet = true;
+        }
+      }
+      return sawWet && higherThanWet;
+    });
+  }
+
   // ---------- derived ----------
   tutorialStep(): number {
-    const s = this.state;
-    if (s.settings.tutorialDone) return -1;
-    const has = (id: string) => s.achievements.includes(id);
-    if (!has('canal-delivered')) return 0;
-    if (!has('first-irrigation')) return 1;
-    if (!has('first-harvest')) return 2;
-    if (!s.buildings.some((b) => b.type === 'reservoir')) return 3;
-    return -1;
+    const g = this.activeGuide();
+    if (!g || g.finished) return -1;
+    return g.index;
   }
 
   private buildSnapshot(): HudSnapshot {
@@ -905,13 +945,37 @@ export class GameController {
       }
       clean += b.clean;
     }
-    const step = this.tutorialStep();
-    const tutorialText: Record<number, { text: string; bn?: string }> = {
-      0: { text: 'Rain is filling the catchment (top-left). Drag along the glowing arrow to dig a canal to the dry rice paddy.', bn: 'বৃষ্টি' },
-      1: { text: 'Water only flows downhill. Watch it travel along your canal to the paddy.' },
-      2: { text: 'First irrigation! When the rice turns gold, pick Inspect and tap the paddy to harvest.', bn: 'প্রথম সেচ' },
-      3: { text: 'Level 2: the east basin glows. Build a Reservoir there, then dig a short canal from the stream into it.' },
-    };
+    const guide = this.activeGuide();
+    const nextId = guide ? nextScenario(s.scenarioId) : nextScenario(s.scenarioId);
+    let tutorial: HudSnapshot['tutorial'] = null;
+    if (guide) {
+      if (guide.finished) {
+        tutorial = {
+          step: guide.lesson.steps.length,
+          total: guide.lesson.steps.length,
+          title: 'Lesson complete',
+          text: 'You can replay this anytime from the Journal. Careful notes are saved there too.',
+          careful: guide.lesson.careful,
+          lessonTitle: guide.lesson.title,
+          finished: true,
+          nextId,
+        };
+      } else {
+        const st = guide.lesson.steps[guide.index];
+        tutorial = {
+          step: guide.index,
+          total: guide.lesson.steps.length,
+          title: st.title,
+          text: st.text,
+          bn: st.bn,
+          careful: st.careful,
+          pulseTool: st.pulseTool,
+          lessonTitle: guide.lesson.title,
+          finished: false,
+          nextId,
+        };
+      }
+    }
     let inspect: InspectInfo | null = null;
     if (this.selectedId >= 0) {
       const b = getBuilding(s, this.selectedId);
@@ -943,7 +1007,7 @@ export class GameController {
       inspect,
       achievements: [...s.achievements],
       toasts: [...this.toasts],
-      tutorial: step >= 0 ? { step, ...tutorialText[step] } : null,
+      tutorial,
       settings: { ...s.settings },
       showHeights: this.showHeights,
       canUndo: s.history.length > 0,
@@ -953,6 +1017,17 @@ export class GameController {
       saveError: this.saveError,
       milestonesDone: MILESTONES.filter((m) => s.achievements.includes(m.achievement)).length,
       loadMessage: this.loadMessage,
+      scenarioId: s.scenarioId,
+      allowedTools: s.allowedTools ? [...s.allowedTools] : null,
+      completedLessons: [...this.profile.completedLessons],
+      unlockedJournal: [...this.profile.unlockedJournal],
+      journal: JOURNAL.map((e) => ({
+        id: e.id,
+        title: e.title,
+        bn: e.bn,
+        locked: !this.profile.unlockedJournal.includes(e.id),
+        replay: e.replayScenario,
+      })),
     };
   }
 

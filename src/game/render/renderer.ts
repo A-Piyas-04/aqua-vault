@@ -459,7 +459,7 @@ export class Renderer {
           ctx.restore();
         }
       }
-      this.drawCanalSlopeArrows(ctx, g, ui.preview.cells, ox, oy, ts);
+      if (ui.preview.climb) this.drawCanalSlopeArrows(ctx, g, ui.preview.cells, ox, oy, ts);
       const xs = ui.preview.cells.map((c) => c % g.w);
       const ys = ui.preview.cells.map((c) => Math.floor(c / g.w));
       ctx.strokeStyle = ui.preview.ok ? 'rgba(40,140,80,0.95)' : 'rgba(190,60,40,0.95)';

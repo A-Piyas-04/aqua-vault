@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { lineCells } from '../input/bresenham';
 import { canvasToCell, clientToCanvas, computeView } from '../input/coordinateMapping';
-import { mix, shade } from '../render/palette';
+import { mix, shade, noise2, fbm2 } from '../render/palette';
 
 describe('palette', () => {
   it('chains mix/shade without collapsing to black', () => {
     const c = shade(mix('#CDA66F', '#8DB86B', 0.5), 0.1);
     expect(c).not.toContain('NaN');
     expect(c).not.toBe('rgb(0,0,0)');
+  });
+
+  it('noise is deterministic and smooth in [0,1]', () => {
+    expect(noise2(1.5, 2.25, 3)).toBe(noise2(1.5, 2.25, 3));
+    const a = fbm2(4, 5, 1);
+    const b = fbm2(4.05, 5, 1);
+    expect(a).toBeGreaterThanOrEqual(0);
+    expect(a).toBeLessThan(1);
+    expect(Math.abs(a - b)).toBeLessThan(0.2);
   });
 });
 

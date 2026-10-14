@@ -93,7 +93,8 @@ export function SettingsDialog({ snap, controller, onClose }: { snap: HudSnapsho
           <li>Treatment needs raw water plus power; only treated water can supply homes through taps.</li>
           <li>Gates (tap to open or close) let you choose who gets the water.</li>
           <li>Mouse: right-drag erases, wheel zooms. Touch: two fingers pan and pinch; with Inspect, one finger pans.</li>
-          <li>Keyboard: focus the map, arrows move, Enter uses the tool, Shift+arrows digs, 1–0 pick tools, Ctrl+Z undo, P pause.</li>
+          <li>Keyboard: focus the map, arrows move, Enter uses the tool, Shift+arrows digs, 1–0 pick tools, Ctrl+Z undo, P pause, J journal, H heights.</li>
+          <li>The Journal (book button) keeps every lesson so you can re-read what can and cannot happen.</li>
         </ul>
       </section>
       <section>

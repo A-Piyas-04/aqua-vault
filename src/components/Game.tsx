@@ -8,6 +8,7 @@ import ToolDock from './ToolDock';
 import Inspector from './Inspector';
 import Tutorial from './Tutorial';
 import { GoalsDialog, SettingsDialog } from './Settings';
+import { JournalDialog, LevelSelectDialog } from './Journal';
 import Toasts from './Toasts';
 import { Icon } from './Icons';
 
@@ -17,7 +18,7 @@ const nullSnapshot = () => null;
 export default function Game() {
   const [controller, setController] = useState<GameController | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [panel, setPanel] = useState<'none' | 'settings' | 'goals'>('none');
+  const [panel, setPanel] = useState<'none' | 'settings' | 'goals' | 'journal' | 'levels'>('none');
 
   useEffect(() => {
     const c = new GameController();
@@ -57,6 +58,11 @@ export default function Game() {
       if (e.key === 'Escape') {
         if (panel !== 'none') setPanel('none');
         else controller.clearSelection();
+        return;
+      }
+      if (e.key === 'j' || e.key === 'J') {
+        e.preventDefault();
+        setPanel((p) => (p === 'journal' ? 'none' : 'journal'));
         return;
       }
       if (panel !== 'none' || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -154,6 +160,8 @@ export default function Game() {
 
       {snap && controller && panel === 'settings' ? <SettingsDialog snap={snap} controller={controller} onClose={() => setPanel('none')} /> : null}
       {snap && controller && panel === 'goals' ? <GoalsDialog snap={snap} onClose={() => setPanel('none')} /> : null}
+      {snap && controller && panel === 'journal' ? <JournalDialog snap={snap} controller={controller} onClose={() => setPanel('none')} /> : null}
+      {snap && controller && panel === 'levels' ? <LevelSelectDialog snap={snap} controller={controller} onClose={() => setPanel('none')} /> : null}
     </div>
   );
 }

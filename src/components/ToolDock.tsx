@@ -16,16 +16,20 @@ export default function ToolDock({ snap, controller }: { snap: HudSnapshot; cont
           const info = TOOL_INFO[id];
           const locked = controller.toolLocked(id);
           const selected = snap.tool === id;
+          const pulse = snap.tutorial?.pulseTool === id && !snap.tutorial.finished;
+          const hidden = snap.allowedTools && !snap.allowedTools.includes(id) && id !== 'inspect' && id !== 'erase';
+          if (hidden) return null;
           return (
             <button
               key={id}
               type="button"
-              className={`tool ${selected ? 'selected' : ''} ${locked ? 'locked' : ''}`}
+              className={`tool ${selected ? 'selected' : ''} ${locked ? 'locked' : ''} ${pulse ? 'pulse' : ''}`}
               aria-pressed={selected}
-              aria-disabled={locked > 0}
-              aria-label={`${info.name}${info.bn ? ` (${info.bn})` : ''}${locked ? `, unlocks at level ${locked}` : ''}${k < 10 ? `, key ${(k + 1) % 10}` : ''}`}
+              aria-disabled={locked !== 0}
+              aria-label={`${info.name}${info.bn ? ` (${info.bn})` : ''}${locked > 0 ? `, unlocks at level ${locked}` : locked < 0 ? ', not in this lesson' : ''}${k < 10 ? `, key ${(k + 1) % 10}` : ''}`}
               onClick={() => {
-                if (locked) controller.toast('info', `${info.name} unlocks at level ${locked}`, info.description);
+                if (locked > 0) controller.toast('info', `${info.name} unlocks at level ${locked}`, info.description);
+                else if (locked < 0) controller.toast('info', `${info.name} is not in this lesson`, 'Finish the lessons to use every tool in the village.');
                 else controller.setTool(id);
               }}
             >
@@ -33,7 +37,7 @@ export default function ToolDock({ snap, controller }: { snap: HudSnapshot; cont
                 <Icon name={locked ? 'lock' : info.icon} />
               </span>
               <span className="tool-name">{info.short}</span>
-              {locked ? <span className="tool-lock">Lv{locked}</span> : null}
+              {locked > 0 ? <span className="tool-lock">Lv{locked}</span> : null}
             </button>
           );
         })}

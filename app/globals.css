@@ -504,21 +504,35 @@ button {
   position: absolute;
   top: 10px;
   left: 10px;
-  max-width: min(360px, calc(100% - 20px));
-  background: rgba(251, 246, 234, 0.96);
+  max-width: min(380px, calc(100% - 20px));
+  background: rgba(251, 246, 234, 0.97);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 10px 12px;
+  padding: 10px 12px 8px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 4px 10px;
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 3;
+}
+.tutorial h3 {
+  margin: 0;
+  font-size: 1rem;
 }
 .tutorial p {
   margin: 0;
   font-size: 0.92rem;
   line-height: 1.4;
+}
+.tut-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tut-lesson {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  font-weight: 600;
 }
 .tut-step {
   background: var(--teal);
@@ -528,9 +542,71 @@ button {
   font-size: 0.75rem;
   font-weight: 700;
 }
-.tutorial .text-btn {
-  grid-column: 2;
-  justify-self: end;
+.tut-careful {
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--warn);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+.tut-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.tutorial.done {
+  border-color: var(--green);
+}
+
+.tool.pulse {
+  animation: tool-pulse 1.2s ease-in-out infinite;
+  border-color: var(--teal);
+}
+@keyframes tool-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(35, 126, 144, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(35, 126, 144, 0.12);
+  }
+}
+
+.journal-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.journal-item {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
+}
+.journal-item:hover:not(:disabled) {
+  background: #f4fbfc;
+}
+.journal-item:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.journal-item.current {
+  border-color: var(--teal);
+  background: #e3f3f8;
+}
+.journal-list .locked .journal-item {
+  background: var(--paper-2);
 }
 .text-btn {
   min-height: 36px;
@@ -894,6 +970,10 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .toast {
     animation: none;
+  }
+  .tool.pulse {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(35, 126, 144, 0.35);
   }
   .switch,
   .switch::after {
