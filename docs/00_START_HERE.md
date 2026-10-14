@@ -1,7 +1,7 @@
-# MONSOON FLOW — Cursor Implementation Entry Point
+# AQUA-VAULT — Cursor Implementation Entry Point
 
 ## Mission
-Implement **Monsoon Flow — বর্ষার ধারা**, a polished, cozy, Bangladesh-inspired browser ecosystem game. The player **draws canals**, sends rainfall through a miniature landscape, stores water, irrigates crops, builds ponds, powers turbines, purifies drinking water, raises fish, and gradually revives a small village. The landscape is the main character.
+Implement **aqua-vault**, a polished, cozy, Bangladesh-inspired browser ecosystem game. The player **draws canals**, sends rainfall through a miniature landscape, stores water, irrigates crops, builds ponds, powers turbines, purifies drinking water, raises fish, and gradually revives a small village. The landscape is the main character.
 
 ## Instructions for the coding agent
 1. Read **all `docs/*.md`**, especially the requirements and acceptance tests, before writing code.
