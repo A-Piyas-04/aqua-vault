@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { lineCells } from '../input/bresenham';
 import { canvasToCell, clientToCanvas, computeView } from '../input/coordinateMapping';
+import { mix, shade } from '../render/palette';
+
+describe('palette', () => {
+  it('chains mix/shade without collapsing to black', () => {
+    const c = shade(mix('#CDA66F', '#8DB86B', 0.5), 0.1);
+    expect(c).not.toContain('NaN');
+    expect(c).not.toBe('rgb(0,0,0)');
+  });
+});
 
 describe('pointer interpolation', () => {
   it('fills every intervening cell on a fast drag, 4-connected', () => {

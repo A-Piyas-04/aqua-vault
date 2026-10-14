@@ -14,7 +14,12 @@ export const PALETTE = {
   shapla: '#F2A6C2',
 };
 
+/** Parses `#RRGGBB` or `rgb(r,g,b)` (the output of `mix`, so colours can be chained). */
 export function hexToRgb(hex: string): [number, number, number] {
+  if (hex.startsWith('rgb')) {
+    const m = hex.match(/-?\d+(\.\d+)?/g);
+    return m ? [Number(m[0]), Number(m[1]), Number(m[2])] : [0, 0, 0];
+  }
   const v = parseInt(hex.slice(1), 16);
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }

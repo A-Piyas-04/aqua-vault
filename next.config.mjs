@@ -7,6 +7,7 @@ const nextConfig = {
   images: { unoptimized: true },
   basePath: basePath || undefined,
   trailingSlash: true,
+  devIndicators: false,
 };
 
 export default nextConfig;
