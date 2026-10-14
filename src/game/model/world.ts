@@ -1,0 +1,145 @@
+import { CONFIG } from './config';
+import type { Building, BuildingType, GameState, Grid, Terrain } from './types';
+import { authorWorld } from '../content/worldSeed';
+import { seedToState } from '../sim/rng';
+
+export const DEFAULT_SEED = 1527;
+
+export function idx(grid: { w: number }, x: number, y: number): number {
+  return y * grid.w + x;
+}
+
+export function inBounds(grid: { w: number; h: number }, x: number, y: number): boolean {
+  return x >= 0 && y >= 0 && x < grid.w && y < grid.h;
+}
+
+export function createBuilding(id: number, type: BuildingType, x: number, y: number): Building {
+  const [w, h] = CONFIG.footprint[type];
+  return {
+    id,
+    type,
+    x,
+    y,
+    w,
+    h,
+    builtin: false,
+    water: 0,
+    clean: 0,
+    progress: 0,
+    stocked: false,
+    quality: 0.6,
+    inflowAvg: 0,
+    dir: 1,
+    hostId: -1,
+    rate: 0,
+    flow: 0,
+    head: 0,
+    active: false,
+    status: '',
+    lit: false,
+    supplied: false,
+  };
+}
+
+export function createGrid(terrain: Terrain[], elevation: number[], w: number, h: number, bed?: number[]): Grid {
+  const n = w * h;
+  return {
+    w,
+    h,
+    terrain: terrain.slice(),
+    elevation: elevation.slice(),
+    bed: bed ? bed.slice() : new Array(n).fill(0),
+    canal: new Array(n).fill(0),
+    gate: new Array(n).fill(0),
+    bridge: new Array(n).fill(0),
+    water: new Array(n).fill(0),
+    saturation: new Array(n).fill(0),
+    flowX: new Array(n).fill(0),
+    flowY: new Array(n).fill(0),
+    structure: new Array(n).fill(-1),
+  };
+}
+
+export function stampBuilding(grid: Grid, b: Building): void {
+  if (b.type === 'floating') return;
+  for (let y = b.y; y < b.y + b.h; y++) {
+    for (let x = b.x; x < b.x + b.w; x++) grid.structure[idx(grid, x, y)] = b.id;
+  }
+}
+
+export function unstampBuilding(grid: Grid, b: Building): void {
+  if (b.type === 'floating') return;
+  for (let y = b.y; y < b.y + b.h; y++) {
+    for (let x = b.x; x < b.x + b.w; x++) {
+      const i = idx(grid, x, y);
+      if (grid.structure[i] === b.id) grid.structure[i] = -1;
+    }
+  }
+}
+
+export function createInitialState(seed = DEFAULT_SEED): GameState {
+  const world = authorWorld(CONFIG.grid.w, CONFIG.grid.h, CONFIG.water.streamRunTilt);
+  const grid = createGrid(world.terrain, world.elevation, world.w, world.h, world.bed);
+  const buildings: Building[] = [];
+  let nextId = 1;
+  for (const hpos of world.houses) {
+    const b = createBuilding(nextId++, 'house', hpos.x, hpos.y);
+    b.builtin = true;
+    buildings.push(b);
+    stampBuilding(grid, b);
+  }
+  const field = createBuilding(nextId++, 'field', world.starterField.x, world.starterField.y);
+  field.builtin = true;
+  buildings.push(field);
+  stampBuilding(grid, field);
+
+  // A little standing water in the catchment so the first stroke reacts immediately.
+  for (let i = 0; i < grid.terrain.length; i++) if (grid.terrain[i] === 'source') grid.water[i] = 6;
+
+  return {
+    version: CONFIG.saveVersion,
+    seed,
+    rngState: seedToState(seed),
+    tick: 0,
+    grid,
+    buildings,
+    nextBuildingId: nextId,
+    resources: {
+      materials: CONFIG.progression.startMaterials,
+      xp: 0,
+      energy: 0,
+      freeCanals: CONFIG.progression.freeCanals,
+    },
+    achievements: [],
+    weather: { mode: 'rain', remaining: 1200, duration: 1200 },
+    ledger: {
+      rainAdded: 0,
+      evaporation: 0,
+      cropUptake: 0,
+      householdUse: 0,
+      discharged: 0,
+      treatmentLoss: 0,
+      spill: 0,
+      total: 24,
+      energyGenerated: 0,
+      energyUsed: 0,
+    },
+    history: [],
+    lastHarvestXpTick: -1e9,
+    regenTimer: 0,
+    lastCleanTick: -1e9,
+    settings: { sound: false, reducedMotion: false, speed: 1, tutorialDone: false },
+    flags: { rain: true, sinks: true },
+  };
+}
+
+export function getBuilding(state: GameState, id: number): Building | undefined {
+  for (const b of state.buildings) if (b.id === id) return b;
+  return undefined;
+}
+
+export function buildingAt(state: GameState, cell: number): Building | undefined {
+  const id = state.grid.structure[cell];
+  if (id < 0) return undefined;
+  return getBuilding(state, id);
+}
