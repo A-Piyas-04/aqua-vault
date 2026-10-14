@@ -1,0 +1,2 @@
+# Cozy Gameplay and UX Skill
+Read `docs/01_PRODUCT_VISION.md`, `docs/06_ART_DIRECTION_AND_AUDIO.md`, `docs/07_UI_CONTROLS_AND_ACCESSIBILITY.md`. For each action ask: what does player touch, what changes in the world, and how is it communicated without reading a tooltip? Prefer beautiful water flow, smooth drag, visible production, gentle animations and a compact HUD. Test every action with actual pointer events and mobile viewport sizes. Avoid loud, competitive or dark-pattern interactions.

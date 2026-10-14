@@ -1,0 +1,2 @@
+# Water Simulation Engineering Skill
+Use for all work in `src/game/sim/` and water routing. Read `docs/03_WATER_SIMULATION.md`, `docs/04_SYSTEMS_AND_BUILDINGS.md`, and `docs/11_ACCEPTANCE_TESTS.md`. Maintain conservative simultaneous flux updates, fixed timestep, deterministic seeded events and nonnegative finite masses. For every new water-producing/consuming structure, add an explicit input-output ledger entry, a visible feedback state, and a unit test. When a mechanic cannot be mass-conserving in toy rules, explicitly designate and document the sink/source.

@@ -1,0 +1,2 @@
+# Cursor Agent Instructions — Monsoon Flow
+Read `docs/00_START_HERE.md`, then all `docs/*.md` before coding. The docs are binding implementation requirements. Implement in phases, preserve coherent working gameplay, test it, never pretend mockups are functioning game systems. Static-first Next.js/TypeScript Canvas, mouse + touch, no backend required. Prioritize actual water connections, satisfying animation, resource integrity and free deployability. Keep a short progress checklist in README.
