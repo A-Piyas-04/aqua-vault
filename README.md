@@ -2,7 +2,7 @@
 
 A cozy browser game about a Bangladeshi monsoon village. Dig canals so rain finds its way to the rice paddy, store it in a reservoir, turn falling water into power, clean it for homes, and grow a living pond and wetland, until the village is in bloom.
 
-Static-first Next.js + TypeScript + Canvas 2D. No backend, no accounts, no tracking. Works with mouse, touch and keyboard. The design docs in [`docs/`](docs/00_START_HERE.md) are the source of truth.
+Static-first Next.js + TypeScript + Three.js (with a Canvas 2D fallback). No backend, no accounts, no tracking. Works with mouse, touch and keyboard. The design docs in [`docs/`](docs/00_START_HERE.md) are the source of truth.
 
 ## Commands
 
@@ -17,30 +17,25 @@ npm run start    # serve out/ locally (npx serve)
 
 ## How to play
 
-A new village starts with five short **lessons** (canal, downhill flow, gates and harvest, reservoir, power and lights). Each step completes only when you actually do the action. Open the **Journal** (book button, or **J**) to re-read any lesson you have seen, including the Careful notes. **Levels** (map button) lists the lessons and the full village.
+Ten short levels, each teaching one idea, then an open village. You start with just the Canal tool and two goals; new tools, stats and ideas appear level by level.
 
-1. Rain fills the catchment. Choose **Canal** and drag from the water to the dry paddy. Water only flows downhill (press **H** to see ground heights). Uphill tiles glow red while you dig.
-2. Wait for the rice to turn gold, then **Inspect** the paddy and **Harvest** it for materials and XP.
-3. In the village, level up to unlock the reservoir, water wheel, battery, treatment plant, house taps, fish pond, wetland, floating garden, pump and fountain. Each one only works when it is really connected to water (and power, where needed). The Inspector shows exactly what a building is missing.
-4. The goals (flag button) run from **A, First Stream** to **G, Village in Bloom**.
+1. **First Canal**: drag a canal from the spring to the dry paddy. 2. **Downhill**: water cannot climb, so go around the ridge. 3. **Gates & Harvest**. 4. **Save the Rain**: store water through a real dry spell. 5. **Power & Light**: a waterwheel and battery at dusk. 6. **Clean Water**: treatment plant and home taps. 7. **Living Pond**: fresh water for fish. 8. **Wetland & Floating Garden**. 9. **Lift the Water**: a pump. 10. **The Village**: bring everything to bloom, then play freely.
 
-Controls: drag to dig, right-drag or the Erase tool to remove, Ctrl+Z to undo, wheel or pinch to zoom, drag with Inspect to pan. Keys: 1–0 select tools, P pauses, H shows heights, J opens the Journal, Esc cancels. The map is keyboard-operable too (focus it, arrows move a cursor, Enter/Space acts, Shift+arrows draws).
+Earn up to 3 stars per level (finish, spend little, be quick). Drag to dig, tap to build, **Inspect** anything to see exactly what it is missing. Camera: drag with Inspect or two fingers, wheel/pinch to zoom, **Q/E** or a two-finger twist to turn. Keys: 1-0 tools, X erase, Ctrl+Z undo, P pause, F speed, H heights, M level map, J journal. The map is keyboard-operable (focus it; arrows move a cursor, Enter acts, Shift+arrows draws).
 
 ## Progress checklist
 
-- [x] Next.js static export, TypeScript strict, Vitest
-- [x] Deterministic water simulation (fixed 10 Hz tick, conservative flux, seeded weather) with a per-tick mass ledger
-- [x] Five guided tutorial lessons on small maps, then the hand-authored 28×18 village; Journal to re-read sequential lessons
-- [x] Canal / erase / gate / bamboo bridge tools with Bresenham drag fill and undo
-- [x] Rice paddy, reservoir, water wheel, battery, treatment plant, house taps
-- [x] Fish pond, wetland, floating garden, pump, fountain
-- [x] XP, levels, unlocks, achievements, milestones A–G
-- [x] Canvas renderer: noise-blended terrain, grass and vegetation, terrace relief, depth-tinted water, rain, day/night, glow, particles, heights overlay
-- [x] Responsive UI: HUD, tool dock (locked tools visible), inspector / bottom sheet, tutorial, toasts, settings, goals
-- [x] Local saves (two generations, migrations, repair, autosave, New World, Reset View)
-- [x] Opt-in procedural audio, reduced motion, favicon and Open Graph metadata
-- [x] Browser QA: desktop 1366×800, 390×844 touch, 320×568 touch; no console errors
-- [ ] Live production URL tested (do this after your first deploy)
+- [x] Next.js static export, TypeScript strict, Vitest (86 tests), Playwright available for browser smoke runs
+- [x] Deterministic water simulation (fixed 10 Hz, conservative flux, seeded and scripted weather) with a per-tick mass ledger
+- [x] Ten-level campaign + sandbox; latched objectives, stars, per-level save, cross-level profile, v2 save upgrade; every level proven solvable by test
+- [x] Three.js low-poly diorama: tilted camera, terrain extruded by height, shadows, shader water with flow, procedural models, day/night, rain, instanced vegetation; Canvas 2D fallback
+- [x] Full-screen UI with progressive disclosure: objective card, unlocked-only tool bar, tool intro cards, popover inspector, level-complete card, level map, Journal, shared accessible dialog
+- [x] Honest mechanics: taps pipe from plants within 10 tiles, fountain aerates ponds, pump lifts uphill, gates/commands enforce the level's tool list
+- [x] Input: pure gesture machine (a pinch never digs), ray-vs-heightfield picking, mouse/touch/keyboard
+- [x] Procedural audio (rain, brook, birds, chimes) with volume, opt-in; reduced motion; text size; Bengali-capable self-hosted fonts
+- [x] Browser-checked in headless Chromium: level 1 played end to end (dig, flow, stars), village on 1366x800 and 390x844, no console errors
+- [ ] Tested on a real phone GPU and a live deployed URL (do this after your first deploy)
+- [ ] Full 10-level hands-on playtest for feel (the tests prove solvability, not fun)
 
 ## Deploying for free
 
@@ -70,23 +65,18 @@ Progress is saved only in this browser's `localStorage` (two alternating slots, 
 - `src/game/controller.ts`: the fixed-timestep loop, gestures, autosave and a snapshot store for React.
 - `src/components/`: React UI around the canvas.
 
-## Deviations from the docs (balancing)
+## Deviations from the original docs
 
-These were tuned so that the full A→G chain is reachable on the real map through real connections, as verified by `playthrough.test.ts`:
-
-- Level thresholds for Lv5–7 are 330 / 410 / 600 XP.
-- Evaporation is 0.005 per tick (half the documented starting value); the river had too little throughput otherwise.
-- Storage depth is 1.25 for the reservoir and fish pond so they can fill to their inlet head; the east basin's south rim is open.
-- Water wheel constant `k = 1`.
-- An extra "Village lit" achievement (+50 XP) rewards wiring the first battery to homes.
+The docs were updated to match: a 3D renderer (`three`) replaces "Canvas 2D only", the five tutorials plus village became a ten-level campaign, unlocks come from levels instead of XP, and save format v3 splits profile from level state (docs 05, 06, 07, 08, 09, 13).
 
 ## Known limitations
 
-- Five tutorial maps plus one hand-authored village; no procedural worlds.
-- Clean water reaches homes over a simplified sealed pipe network from treatment tanks to house taps (no pressure simulation).
-- Audio is synthesized with Web Audio (no recorded samples) and is off by default.
-- `npm audit` reports advisories in dev/build-time dependencies (Vitest, PostCSS via Next). Fixing them needs major upgrades (Next 16, Vitest 5) and was deferred; none of them ship in the static output.
+- Procedural worlds are not included; levels are hand-authored.
+- The pipe network is a range check (10 tiles), not a pressure simulation; electricity is one shared pool.
+- Audio is synthesized (no samples) and off by default.
+- The 3D view has been verified only in software-rendered headless Chromium; tune quality on real devices (Settings → Graphics).
+- `npm audit` reports advisories in dev/build-time dependencies; none ship in the static output.
 
 ## Credits
 
-Game design, code and all art (drawn procedurally at runtime) are original to this project. Dependencies: Next.js and React (MIT), Vitest (MIT), TypeScript (Apache-2.0). No external fonts, images or audio.
+Game design, code and all art (drawn procedurally at runtime) are original to this project. Dependencies: Next.js and React (MIT), three.js (MIT), Vitest (MIT), Playwright (Apache-2.0), TypeScript (Apache-2.0). Fonts Hind Siliguri and Baloo Da 2 (SIL OFL), bundled at build time. No external images or audio, and no network requests while playing.
