@@ -2,16 +2,18 @@ import { CONFIG } from '../model/config';
 import type { GameEvent, GameState } from '../model/types';
 import { ACHIEVEMENTS, type AchievementDef } from '../content/milestones';
 
-export function levelForXp(xp: number): number {
-  const levels = CONFIG.progression.levels;
-  let lv = 1;
-  for (let i = 0; i < levels.length; i++) if (xp >= levels[i]) lv = i + 1;
-  return lv;
+export const RANK_NAMES = ['Newcomer', 'Canal Digger', 'Paddy Keeper', 'Rain Saver', 'Wheelwright', 'Water Engineer', 'River Friend', 'Village Guardian'];
+
+/** Cosmetic Village Rank (1-based) for profile XP. */
+export function rankForXp(xp: number): number {
+  const ranks = CONFIG.progression.ranks;
+  let r = 1;
+  for (let i = 0; i < ranks.length; i++) if (xp >= ranks[i]) r = i + 1;
+  return r;
 }
 
-export function nextLevelXp(xp: number): number | null {
-  const levels = CONFIG.progression.levels;
-  for (const t of levels) if (t > xp) return t;
+export function nextRankXp(xp: number): number | null {
+  for (const t of CONFIG.progression.ranks) if (t > xp) return t;
   return null;
 }
 
@@ -19,26 +21,15 @@ export function hasAchievement(state: GameState, id: string): boolean {
   return state.achievements.includes(id);
 }
 
-/** Idempotent: grants XP/materials only the first time an achievement id is earned. */
+/** Idempotent: grants materials only the first time an achievement id is earned. */
 export function grantAchievement(state: GameState, id: string, events: GameEvent[]): boolean {
   if (hasAchievement(state, id)) return false;
   const def = ACHIEVEMENTS.find((a) => a.id === id);
   if (!def) return false;
-  const before = levelForXp(state.resources.xp);
   state.achievements.push(id);
-  state.resources.xp += def.xp;
   state.resources.materials += def.materials;
-  events.push({ type: 'achievement', id, xp: def.xp, materials: def.materials });
-  const after = levelForXp(state.resources.xp);
-  if (after > before) events.push({ type: 'levelUp', level: after });
+  events.push({ type: 'achievement', id, materials: def.materials });
   return true;
-}
-
-export function addXp(state: GameState, xp: number, events: GameEvent[]): void {
-  const before = levelForXp(state.resources.xp);
-  state.resources.xp += xp;
-  const after = levelForXp(state.resources.xp);
-  if (after > before) events.push({ type: 'levelUp', level: after });
 }
 
 /** Checks state-derived achievements. Called every tick (cheap). */

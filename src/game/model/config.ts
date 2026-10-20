@@ -5,7 +5,7 @@ import type { BuildingTypePlaceable, WeatherMode } from './types';
  * See docs/13_BALANCING_DATA.md.
  */
 export const CONFIG = {
-  saveVersion: 2,
+  saveVersion: 3,
   grid: { w: 28, h: 18 },
   dt: 0.1,
   ticksPerSecond: 10,
@@ -73,7 +73,8 @@ export const CONFIG = {
     evaporationPerTick: 0.01,
     minFill: 65,
     stockCost: 10,
-    growthPerTick: 1 / 1500,
+    /** About 100 s from stocking to harvest while the pond stays fresh. */
+    growthPerTick: 1 / 1000,
     minQuality: 0.45,
     harvestMaterials: 20,
   },
@@ -109,9 +110,13 @@ export const CONFIG = {
     cleanPerTick: 0.4,
     energyPerTick: 1,
   },
-  house: { cleanPerTick: 0.1, energyPerTick: 0.05 },
+  /** Homes keep a small clean-water pot (kolshi) that taps refill; they drink from the pot. */
+  house: { cleanPerTick: 0.1, energyPerTick: 0.05, potCap: 6, refillPerTick: 0.4 },
+  /** Home taps draw only from treatment plants within this many tiles (Manhattan, to the nearest plant tile). */
+  connector: { pipeRange: 10 },
   pump: { maxPerTick: 1, energyPerVolume: 0.4, liftFactor: 0.5 },
-  fountain: { energyPerTick: 0.1, minWater: 0.5 },
+  /** A powered fountain beside a fish pond aerates it, raising the pond's freshness target. */
+  fountain: { energyPerTick: 0.1, minWater: 0.5, aeration: 0.3 },
 
   costs: {
     canal: 1,
@@ -129,24 +134,11 @@ export const CONFIG = {
     pump: 45,
     fountain: 20,
   } as Record<BuildingTypePlaceable | 'canal' | 'gate' | 'bridge', number>,
-  eraseRefund: 0.5,
-
-  unlockLevel: {
-    canal: 1,
-    gate: 1,
-    field: 1,
-    bridge: 2,
-    reservoir: 2,
-    turbine: 3,
-    battery: 3,
-    treatment: 4,
-    connector: 4,
-    fishpond: 5,
-    wetland: 6,
-    floating: 6,
-    pump: 7,
-    fountain: 7,
-  } as Record<BuildingTypePlaceable | 'canal' | 'gate' | 'bridge', number>,
+  /**
+   * Erasing a building refunds half its cost. Erasing a canal gives the tile back to the
+   * free-canal allowance when there is room, otherwise half a material.
+   */
+  eraseRefund: { building: 0.5, canal: 0.5 },
 
   footprint: {
     field: [2, 2],
@@ -164,15 +156,12 @@ export const CONFIG = {
   } as Record<string, [number, number]>,
 
   progression: {
-    /**
-     * Cumulative XP thresholds for Lv1..Lv7. Lv5+ tuned down from the doc starting
-     * values so every unlock is reachable through one-time achievements.
-     */
-    levels: [0, 50, 120, 220, 330, 410, 600],
+    /** Cumulative profile XP thresholds for the cosmetic Village Rank (XP comes from finishing levels). */
+    ranks: [0, 40, 130, 250, 400, 560, 760, 1000],
+    /** Bonus XP per star earned on a level (only improvements pay). */
+    starXp: 10,
     startMaterials: 120,
     freeCanals: 10,
-    repeatHarvestXp: 3,
-    repeatHarvestCooldownTicks: 600,
     /** Anti-softlock: below this, materials slowly regenerate. */
     regenFloor: 20,
     regenEveryTicks: 100,

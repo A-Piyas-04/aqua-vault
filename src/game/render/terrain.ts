@@ -12,7 +12,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-function soilColor(t: Terrain, elev: number, greenness: number, i: number, x: number, y: number): string {
+export function soilColor(t: Terrain, elev: number, greenness: number, i: number, x: number, y: number): string {
   const n = fbm2(x * 0.55, y * 0.55, 3);
   const n2 = noisePatch(x, y, i);
   const lift = (elev - 3) * 0.05 + (n - 0.5) * 0.16;

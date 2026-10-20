@@ -3,34 +3,13 @@ import { isChannelTerrain, STORAGE_TYPES } from '../model/buildings';
 import type { Building, GameState } from '../model/types';
 import { GATE_CLOSED } from '../model/types';
 import type { ViewMetrics } from '../input/coordinateMapping';
-import { dayPhase } from '../sim/weather';
+import { statePhase } from '../sim/weather';
 import { drawBuilding, drawHouseGlow, type DrawCtx } from './buildings';
 import { hash01, mix, PALETTE } from './palette';
 import { buildTerrainCache } from './terrain';
+import type { RenderUi } from './types';
 
-export interface Preview {
-  cells: number[];
-  ok: boolean;
-  reason: string;
-  /** Per-segment climb flags for canal strokes (true = uphill). */
-  climb?: boolean[];
-}
-
-export interface RenderUi {
-  hoverCell: number;
-  preview: Preview | null;
-  selectedId: number;
-  selectedCell: number;
-  keyboardCell: number;
-  showHeights: boolean;
-  reducedMotion: boolean;
-  tutorialPath: { x: number; y: number }[] | null;
-  highlightZone: { x: number; y: number; w: number; h: number } | null;
-  highlightCells?: { x: number; y: number }[];
-  pointer?: { x: number; y: number } | null;
-  showGrid?: boolean;
-  buildTool?: boolean;
-}
+export type { Preview, RenderUi } from './types';
 
 interface Particle {
   x: number;
@@ -52,6 +31,7 @@ interface Drop {
 }
 
 const MAX_PARTICLES = 220;
+const MAX_CACHE_PX = 4096;
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
@@ -80,6 +60,13 @@ export class Renderer {
     this.canvas.width = Math.round(this.cssW * dpr);
     this.canvas.height = Math.round(this.cssH * dpr);
     this.cacheKey = '';
+  }
+
+  /** Forget the baked terrain (new level, or the map changed shape). */
+  invalidate(): void {
+    this.cacheKey = '';
+    this.wetPrev = null;
+    this.particles = [];
   }
 
   /** Celebration bloom of petals at a cell (1-2 s). */
@@ -139,7 +126,7 @@ export class Renderer {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     // Sky / backdrop.
-    const phase = dayPhase(state.tick);
+    const phase = statePhase(state);
     const brightness = 0.5 + 0.5 * Math.sin(2 * Math.PI * phase);
     const darkness = Math.max(0, 0.5 - brightness) * 0.9;
     const overcast = state.weather.mode === 'heavy' ? 0.35 : state.weather.mode === 'rain' ? 0.22 : state.weather.mode === 'drizzle' ? 0.12 : 0;
@@ -148,9 +135,12 @@ export class Renderer {
 
     // Terrain cache keyed by tile size and greenness bucket.
     const greenness = this.greenness(state);
-    const key = `${ts.toFixed(2)}|${this.dpr}|${Math.round(greenness * 10)}`;
+    // Bake at a bucketed tile size (no rebuild on every zoom notch) and never larger than
+    // MAX_CACHE_PX on a side (mobile canvas limits); drawImage scales it to the view.
+    const cacheTs = Math.min(Math.max(4, Math.round(ts / 6) * 6), MAX_CACHE_PX / (Math.max(g.w, g.h) * this.dpr));
+    const key = `${cacheTs.toFixed(2)}|${this.dpr}|${Math.round(greenness * 10)}|${g.w}x${g.h}`;
     if (key !== this.cacheKey || !this.terrainCache) {
-      this.terrainCache = buildTerrainCache(g, ts, this.dpr, Math.round(greenness * 10) / 10);
+      this.terrainCache = buildTerrainCache(g, cacheTs, this.dpr, Math.round(greenness * 10) / 10);
       this.cacheKey = key;
     }
     ctx.drawImage(this.terrainCache, ox, oy, g.w * ts, g.h * ts);
@@ -652,8 +642,9 @@ export class Renderer {
       ctx.lineDashOffset = reduced ? 0 : -time * ts * 0.6;
       for (const c of state.buildings) {
         if (c.type !== 'connector') continue;
+        const p = plants.find((q) => q.id === c.hostId);
+        if (!p) continue;
         const [cx, cy] = center(c);
-        const p = plants[0];
         const [px, py] = center(p);
         ctx.beginPath();
         ctx.moveTo(px, py);

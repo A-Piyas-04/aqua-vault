@@ -1,21 +1,30 @@
 import { CONFIG } from '../model/config';
-import type { Building, GameState, ScenarioId, ToolId } from '../model/types';
+import type { Building, GameState, HistoryEntry, LevelId, WeatherMode } from '../model/types';
 import { createBuilding, createInitialState } from '../model/world';
-import { isScenarioId } from '../content/scenarios';
+import { getLevel, isLevelId } from '../content/campaign';
+import { levelIdFromV2 } from './profile';
 
 export type LoadResult =
-  | { ok: true; state: GameState; repaired: boolean }
+  | { ok: true; state: GameState; repaired: boolean; legacySettings?: unknown }
   | { ok: false; reason: 'empty' | 'corrupt' | 'future'; message: string };
 
 const ARRAY_KEYS = ['elevation', 'bed', 'canal', 'gate', 'bridge', 'water', 'saturation', 'flowX', 'flowY', 'structure'] as const;
+const WEATHER_MODES: WeatherMode[] = ['drizzle', 'rain', 'heavy', 'dry'];
+const HISTORY_KINDS = new Set(['canal', 'eraseCanal', 'place', 'eraseBuilding', 'gate', 'bridge']);
 
 function finiteOr(v: unknown, fallback: number, min = -Infinity, max = Infinity): number {
   return typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
 }
 
+function resolveLevelId(data: Record<string, unknown>): LevelId {
+  if (isLevelId(data.levelId)) return data.levelId;
+  return levelIdFromV2(data.scenarioId) ?? 'village';
+}
+
 /**
- * Validate a parsed save, migrate older versions and repair recoverable corruption.
- * Unknown future major versions are rejected rather than guessed at.
+ * Validate a parsed save, migrate older versions (v1/v2 scenario saves) and repair
+ * recoverable corruption. Unknown future versions are rejected rather than guessed at.
+ * Authored data (terrain, heights, tool list) always comes from the current level.
  */
 export function migrateSave(raw: unknown): LoadResult {
   if (!raw || typeof raw !== 'object') return { ok: false, reason: 'corrupt', message: 'Save is not an object' };
@@ -28,21 +37,20 @@ export function migrateSave(raw: unknown): LoadResult {
     return { ok: false, reason: 'future', message: `Save is from a newer version (${version}) of the game` };
   }
 
-  const sid: ScenarioId = isScenarioId(data.scenarioId) ? data.scenarioId : 'village';
-  const fresh = createInitialState(typeof data.seed === 'number' ? data.seed : undefined, sid);
+  const levelId = resolveLevelId(data);
+  const level = getLevel(levelId);
+  const fresh = createInitialState(typeof data.seed === 'number' ? data.seed : undefined, levelId);
   let repaired = false;
   const s = data as unknown as GameState;
-  if (!isScenarioId(data.scenarioId)) {
-    s.scenarioId = sid;
-    repaired = true;
-  }
+  const legacySettings = 'settings' in data ? data.settings : undefined;
+  if (!isLevelId(data.levelId) && version >= 3) repaired = true;
+
   if (!s.grid || typeof s.grid !== 'object') return { ok: false, reason: 'corrupt', message: 'Save has no map' };
   const n = fresh.grid.w * fresh.grid.h;
   if (s.grid.w !== fresh.grid.w || s.grid.h !== fresh.grid.h || !Array.isArray(s.grid.terrain) || s.grid.terrain.length !== n) {
     return { ok: false, reason: 'corrupt', message: 'Map size mismatch' };
   }
 
-  // Terrain/elevation/bed are authored: always trust the current world definition.
   s.grid.terrain = fresh.grid.terrain;
   s.grid.elevation = fresh.grid.elevation;
   s.grid.bed = fresh.grid.bed;
@@ -83,10 +91,14 @@ export function migrateSave(raw: unknown): LoadResult {
       }
       const base = createBuilding(b.id, b.type as Building['type'], finiteOr(b.x, 0), finiteOr(b.y, 0));
       const merged: Building = { ...base, ...b } as Building;
+      // Footprints are authored: never trust a saved size.
+      merged.w = base.w;
+      merged.h = base.h;
       merged.water = finiteOr(merged.water, 0, 0);
       merged.clean = finiteOr(merged.clean, 0, 0);
       merged.progress = finiteOr(merged.progress, 0, 0);
       merged.quality = finiteOr(merged.quality, 0.6, 0, 1);
+      merged.dir = Math.floor(finiteOr(merged.dir, 1, 0, 3));
       buildings.push(merged);
     }
   } else {
@@ -107,39 +119,68 @@ export function migrateSave(raw: unknown): LoadResult {
   }
 
   const res = (s.resources ?? {}) as Partial<GameState['resources']>;
+  const freeMax = fresh.resources.freeCanalsMax;
   s.resources = {
     materials: finiteOr(res.materials, fresh.resources.materials, 0),
-    xp: finiteOr(res.xp, 0, 0),
     energy: finiteOr(res.energy, 0, 0),
-    freeCanals: finiteOr(res.freeCanals, 0, 0, Math.max(CONFIG.progression.freeCanals, fresh.resources.freeCanals)),
+    freeCanals: finiteOr(res.freeCanals, 0, 0, freeMax),
+    freeCanalsMax: freeMax,
   };
   s.achievements = Array.isArray(s.achievements) ? s.achievements.filter((a) => typeof a === 'string') : [];
   s.nextBuildingId = Math.max(finiteOr(s.nextBuildingId, 1), ...s.buildings.map((b) => b.id + 1));
-  s.tick = finiteOr(s.tick, 0, 0);
+  s.tick = Math.floor(finiteOr(s.tick, 0, 0));
   s.rngState = finiteOr(s.rngState, fresh.rngState) >>> 0;
   s.seed = finiteOr(s.seed, fresh.seed);
-  if (!s.weather || typeof s.weather.mode !== 'string') {
+  if (!s.weather || !WEATHER_MODES.includes(s.weather.mode) || !(finiteOr(s.weather.remaining, 0) > 0)) {
     s.weather = fresh.weather;
     repaired = true;
+  } else {
+    s.weather = { mode: s.weather.mode, remaining: finiteOr(s.weather.remaining, 1, 1), duration: finiteOr(s.weather.duration, 1, 1) };
   }
+  const steps = level.weatherScript?.steps.length ?? 0;
+  const ws = finiteOr(s.weatherStep, fresh.weatherStep);
+  s.weatherStep = steps > 0 && Number.isInteger(ws) && ws >= 0 && ws < steps ? ws : steps > 0 ? fresh.weatherStep : -1;
+  s.dayOffset = finiteOr(s.dayOffset, fresh.dayOffset);
   s.ledger = { ...fresh.ledger, ...(s.ledger ?? {}) };
-  s.history = Array.isArray(s.history) ? s.history : [];
-  s.lastHarvestXpTick = finiteOr(s.lastHarvestXpTick, -1e9);
+  s.history = Array.isArray(s.history)
+    ? (s.history as unknown[]).filter((h): h is HistoryEntry => !!h && typeof h === 'object' && HISTORY_KINDS.has((h as { kind?: string }).kind ?? ''))
+    : [];
+  for (const h of s.history) if (h.kind === 'eraseCanal') h.freeReturned = finiteOr(h.freeReturned, 0, 0);
   s.regenTimer = finiteOr(s.regenTimer, 0);
   s.lastCleanTick = finiteOr(s.lastCleanTick, -1e9);
-  s.settings = { ...fresh.settings, ...(s.settings ?? {}) };
   s.flags = { rain: true, sinks: true };
-  s.scenarioId = sid;
-  if (s.allowedTools !== null && s.allowedTools !== undefined) {
-    if (!Array.isArray(s.allowedTools)) {
-      s.allowedTools = fresh.allowedTools;
-      repaired = true;
-    } else {
-      s.allowedTools = (s.allowedTools as unknown[]).filter((t): t is ToolId => typeof t === 'string') as ToolId[];
-    }
-  } else {
-    s.allowedTools = fresh.allowedTools;
+  s.levelId = levelId;
+  s.allowedTools = [...level.tools];
+
+  const valid = new Set(level.objectives.map((o) => o.id));
+  const obj = (s.objectives ?? {}) as Partial<GameState['objectives']>;
+  const sustain: Record<string, number> = {};
+  if (obj.sustain && typeof obj.sustain === 'object') {
+    for (const [k, v] of Object.entries(obj.sustain)) if (valid.has(k)) sustain[k] = finiteOr(v, 0, 0);
   }
+  s.objectives = {
+    done: Array.isArray(obj.done) ? obj.done.filter((d): d is string => typeof d === 'string' && valid.has(d)) : [],
+    sustain,
+    completedTick: typeof obj.completedTick === 'number' && Number.isFinite(obj.completedTick) ? obj.completedTick : null,
+    stars: finiteOr(obj.stars, 0, 0, 3),
+  };
+  const st = (s.stats ?? {}) as Partial<GameState['stats']>;
+  const had = (id: string) => (s.achievements.includes(id) ? 1 : 0);
+  s.stats = {
+    spent: finiteOr(st.spent, 0),
+    harvestRice: finiteOr(st.harvestRice, had('first-harvest'), 0),
+    harvestFish: finiteOr(st.harvestFish, had('fish-harvest'), 0),
+    harvestGarden: finiteOr(st.harvestGarden, had('floating-harvest'), 0),
+    stocked: finiteOr(st.stocked, had('fish-stocked'), 0),
+  };
+
+  // Fields that no longer exist in v3.
+  const legacy = s as unknown as Record<string, unknown>;
+  delete legacy.settings;
+  delete legacy.scenarioId;
+  delete legacy.lastHarvestXpTick;
+  delete (s.resources as unknown as Record<string, unknown>).xp;
+
   s.version = CONFIG.saveVersion;
-  return { ok: true, state: s, repaired };
+  return { ok: true, state: s, repaired, legacySettings };
 }

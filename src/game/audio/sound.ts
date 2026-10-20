@@ -2,13 +2,16 @@
  * Procedural Web Audio: no audio files, off by default, created only after a user
  * gesture enables sound.
  */
-export type SoundName = 'dig' | 'plunk' | 'build' | 'chime' | 'erase' | 'error' | 'harvest';
+export type SoundName = 'dig' | 'plunk' | 'build' | 'chime' | 'erase' | 'error' | 'harvest' | 'objective' | 'complete' | 'click';
 
 export class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private rainGain: GainNode | null = null;
+  private brookGain: GainNode | null = null;
+  private brookFilter: BiquadFilterNode | null = null;
   private enabled = false;
+  private volume = 0.7;
   private lastPlay = new Map<SoundName, number>();
   private birdTimer = 0;
 
@@ -25,13 +28,19 @@ export class SoundEngine {
     return this.enabled;
   }
 
+  /** Master volume 0..1. */
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.ctx && this.master) this.master.gain.setTargetAtTime(this.volume * 0.7, this.ctx.currentTime, 0.05);
+  }
+
   private ensure(): void {
     if (this.ctx || typeof window === 'undefined') return;
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AC) return;
     this.ctx = new AC();
     this.master = this.ctx.createGain();
-    this.master.gain.value = 0.5;
+    this.master.gain.value = this.volume * 0.7;
     this.master.connect(this.ctx.destination);
     // Ambient rain: looped filtered noise.
     const len = this.ctx.sampleRate * 2;
@@ -48,12 +57,29 @@ export class SoundEngine {
     this.rainGain.gain.value = 0;
     src.connect(filter).connect(this.rainGain).connect(this.master);
     src.start();
+    // Babbling brook: the same noise through a wobbling band-pass, loudness follows canal flow.
+    const brook = this.ctx.createBufferSource();
+    brook.buffer = buf;
+    brook.loop = true;
+    brook.playbackRate.value = 0.8;
+    this.brookFilter = this.ctx.createBiquadFilter();
+    this.brookFilter.type = 'bandpass';
+    this.brookFilter.frequency.value = 900;
+    this.brookFilter.Q.value = 1.4;
+    this.brookGain = this.ctx.createGain();
+    this.brookGain.gain.value = 0;
+    brook.connect(this.brookFilter).connect(this.brookGain).connect(this.master);
+    brook.start();
   }
 
   /** Called a few times per second with the current weather intensity (0..1) and ecology (0..1). */
-  ambient(rain: number, ecology: number, dt: number): void {
+  ambient(rain: number, ecology: number, dt: number, flow = 0): void {
     if (!this.enabled || !this.ctx || !this.rainGain) return;
     this.rainGain.gain.setTargetAtTime(rain * 0.12, this.ctx.currentTime, 0.8);
+    if (this.brookGain && this.brookFilter) {
+      this.brookGain.gain.setTargetAtTime(Math.min(1, flow) * 0.09, this.ctx.currentTime, 0.6);
+      this.brookFilter.frequency.setTargetAtTime(700 + Math.random() * 600, this.ctx.currentTime, 0.3);
+    }
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
       this.birdTimer = 4 + Math.random() * 8;
@@ -130,6 +156,17 @@ export class SoundEngine {
         break;
       case 'error':
         this.tone(200, 0.12, 'triangle', 0.08, 160);
+        break;
+      case 'click':
+        this.tone(880, 0.04, 'sine', 0.05);
+        break;
+      case 'objective':
+        this.tone(587, 0.25, 'sine', 0.1);
+        this.tone(880, 0.35, 'sine', 0.08, undefined, 0.1);
+        break;
+      case 'complete':
+        // A gentle rising chord (D major pentatonic).
+        [294, 370, 440, 587, 740].forEach((f, k) => this.tone(f, 1.2, 'sine', 0.07, undefined, k * 0.12));
         break;
     }
   }

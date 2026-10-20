@@ -1,7 +1,6 @@
 import { CONFIG } from './config';
-import type { BuildingTypePlaceable, GameState, Grid, Terrain } from './types';
+import type { BuildingTypePlaceable, GameState, Grid, Terrain, ToolId } from './types';
 import { getBuilding, idx, inBounds } from './world';
-import { levelForXp } from '../sim/progression';
 
 export const STORAGE_TYPES = new Set(['reservoir', 'fishpond', 'wetland']);
 
@@ -59,11 +58,13 @@ function footprintCells(g: Grid, x: number, y: number, w: number, h: number): nu
   return cells;
 }
 
-/** True when the building type is unlocked at the player's current level. */
-export function isUnlocked(state: GameState, key: keyof typeof CONFIG.unlockLevel): boolean {
-  if (state.allowedTools) return state.allowedTools.includes(key);
-  return levelForXp(state.resources.xp) >= CONFIG.unlockLevel[key];
+/** True when this level allows the tool. Inspect and erase are always allowed. */
+export function isUnlocked(state: GameState, tool: ToolId): boolean {
+  if (tool === 'inspect' || tool === 'erase') return true;
+  return state.allowedTools.includes(tool);
 }
+
+export const NOT_AVAILABLE = 'Not available in this level yet';
 
 export function validatePlacement(
   state: GameState,
@@ -73,7 +74,7 @@ export function validatePlacement(
 ): PlacementCheck {
   const g = state.grid;
   const cost = CONFIG.costs[type];
-  if (!isUnlocked(state, type)) return fail(`Unlocks at level ${CONFIG.unlockLevel[type]}`, cost);
+  if (!isUnlocked(state, type)) return fail(NOT_AVAILABLE, cost);
   const [w, h] = CONFIG.footprint[type];
   const cells = footprintCells(g, x, y, w, h);
   if (!cells) return fail('Does not fit on the map', cost);

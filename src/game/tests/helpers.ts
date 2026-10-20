@@ -1,5 +1,6 @@
 import type { GameState, Terrain } from '../model/types';
 import { createGrid, createInitialState } from '../model/world';
+import { ALL_TOOLS } from '../content/campaign';
 
 /** A small custom sandbox: soil everywhere, given elevations, no buildings, sinks/rain off. */
 export function makeSandbox(w: number, h: number, elev: (x: number, y: number) => number, terrain?: (x: number, y: number) => Terrain): GameState {
@@ -16,7 +17,7 @@ export function makeSandbox(w: number, h: number, elev: (x: number, y: number) =
   base.buildings = [];
   base.flags = { rain: false, sinks: false };
   base.resources.materials = 10000;
-  base.resources.xp = 100000;
+  base.allowedTools = [...ALL_TOOLS];
   base.weather = { mode: 'dry', remaining: 1e9, duration: 1e9 };
   return base;
 }

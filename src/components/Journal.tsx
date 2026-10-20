@@ -1,77 +1,46 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import type { GameController, HudSnapshot } from '@/game/controller';
-import { JOURNAL } from '@/game/content/lessons';
+import { useState } from 'react';
+import type { GameController } from '@/game/controller';
+import { TOOL_INFO } from '@/game/content/strings';
+import { Dialog } from './Dialog';
 import { Icon } from './Icons';
+import { Stars } from './ObjectiveCard';
+import { useSlice } from './useGame';
 
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus();
-  }, []);
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal journal-modal" role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>{title}</h2>
-          <button ref={closeRef} type="button" className="icon-btn small" onClick={onClose} aria-label="Close">
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-export function JournalDialog({ snap, controller, onClose }: { snap: HudSnapshot; controller: GameController; onClose: () => void }) {
+export function JournalDialog({ controller, onClose }: { controller: GameController; onClose: () => void }) {
+  const meta = useSlice(controller, 'meta');
   const [openId, setOpenId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
-  const entry = JOURNAL.find((e) => e.id === openId) ?? null;
-  const unlocked = (id: string) => snap.unlockedJournal.includes(id);
+  if (!meta) return null;
+  const entry = meta.journal.find((e) => e.id === openId && !e.locked) ?? null;
 
-  if (entry && unlocked(entry.id)) {
+  if (entry) {
     const p = entry.pages[page] ?? entry.pages[0];
     return (
       <Dialog title={entry.title} onClose={onClose}>
         <p className="desc">
-          Page {page + 1} of {entry.pages.length}
-          {p.bn ? (
-            <>
-              {' '}
-              · <span className="bn">{p.bn}</span>
-            </>
-          ) : null}
+          {entry.num ? `Level ${entry.num} · ` : ''}
+          <span className="bn">{entry.bn}</span> · Page {page + 1} of {entry.pages.length}
         </p>
         <h3>{p.title}</h3>
-        <p>{p.text}</p>
+        <p className="journal-text">{p.text}</p>
         {p.careful?.length ? (
-          <ul className="tut-careful">
+          <ul className="careful">
             {p.careful.map((c) => (
-              <li key={c}>{c}</li>
+              <li key={c}>
+                <Icon name="warn" size={14} /> {c}
+              </li>
             ))}
           </ul>
         ) : null}
-        <div className="tut-actions">
+        <div className="row-buttons">
           <button type="button" className="action" disabled={page <= 0} onClick={() => setPage((n) => Math.max(0, n - 1))}>
             Back
           </button>
           <button type="button" className="action" disabled={page >= entry.pages.length - 1} onClick={() => setPage((n) => Math.min(entry.pages.length - 1, n + 1))}>
             Next
           </button>
-          {entry.replayScenario ? (
-            <button
-              type="button"
-              className="action"
-              onClick={() => {
-                controller.replayLesson(entry.replayScenario!);
-                onClose();
-              }}
-            >
-              Replay lesson
-            </button>
-          ) : null}
           <button
             type="button"
             className="text-btn"
@@ -80,7 +49,7 @@ export function JournalDialog({ snap, controller, onClose }: { snap: HudSnapshot
               setPage(0);
             }}
           >
-            All entries
+            All pages
           </button>
         </div>
       </Dialog>
@@ -89,81 +58,76 @@ export function JournalDialog({ snap, controller, onClose }: { snap: HudSnapshot
 
   return (
     <Dialog title="Journal" onClose={onClose}>
-      <p className="desc">Lessons you have seen, in order. Locked pages unlock as you play.</p>
-      <ol className="journal-list">
-        {JOURNAL.map((e, i) => {
-          const lock = !unlocked(e.id);
-          return (
-            <li key={e.id} className={lock ? 'locked' : ''}>
-              <button
-                type="button"
-                className="journal-item"
-                disabled={lock}
-                onClick={() => {
-                  setOpenId(e.id);
-                  setPage(0);
-                }}
-              >
-                <span className="goal-key" aria-hidden="true">
-                  {lock ? <Icon name="lock" size={16} /> : i + 1}
-                </span>
-                <span>
-                  <strong>
-                    {e.title}
-                    {e.bn ? <span className="bn"> · {e.bn}</span> : null}
-                  </strong>
-                  <span className="desc">{lock ? lockHint(e.id, i, snap) : 'Tap to re-read'}</span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
+      <p className="desc">What each level taught, and what can and cannot happen. Pages open as you reach each level.</p>
+      <ol className="list">
+        {meta.journal.map((e) => (
+          <li key={e.id}>
+            <button
+              type="button"
+              className="list-item"
+              disabled={e.locked}
+              onClick={() => {
+                setOpenId(e.id);
+                setPage(0);
+              }}
+            >
+              <span className="num-badge" aria-hidden="true">
+                {e.locked ? <Icon name="lock" size={16} /> : e.num || <Icon name="sprout" size={16} />}
+              </span>
+              <span>
+                <strong>
+                  {e.title} <span className="bn">{e.bn}</span>
+                </strong>
+                <span className="desc">{e.locked ? 'Reach this level to unlock.' : `${e.pages.length} page${e.pages.length > 1 ? 's' : ''}`}</span>
+              </span>
+            </button>
+          </li>
+        ))}
       </ol>
     </Dialog>
   );
 }
 
-function lockHint(id: string, index: number, snap: HudSnapshot): string {
-  const prev = JOURNAL[index - 1];
-  if (prev && !snap.unlockedJournal.includes(prev.id)) return `Finish “${prev.title}” first.`;
-  if (id === 'treatment') return 'Unlocks when a treatment plant makes clean water.';
-  if (id === 'taps') return 'Unlocks when a home receives clean water.';
-  if (id === 'fishpond') return 'Unlocks when you stock a fish pond.';
-  if (id === 'wetland') return 'Unlocks when a wetland thrives.';
-  return 'Play the matching lesson to unlock.';
-}
-
-export function LevelSelectDialog({ snap, controller, onClose }: { snap: HudSnapshot; controller: GameController; onClose: () => void }) {
-  const levels = JOURNAL.filter((e) => e.replayScenario);
+export function LevelMapDialog({ controller, onClose }: { controller: GameController; onClose: () => void }) {
+  const meta = useSlice(controller, 'meta');
+  if (!meta) return null;
+  const all = [...meta.levels, meta.sandbox];
+  const stars = meta.levels.reduce((s, l) => s + l.stars, 0);
   return (
-    <Dialog title="Levels" onClose={onClose}>
-      <p className="desc">Five short lessons, then the village. Finish one to open the next.</p>
-      <ol className="journal-list">
-        {levels.map((e) => {
-          const id = e.replayScenario!;
-          const lock = e.id !== 'lesson-1' && !snap.completedLessons.includes(prevLesson(e.id)) && !snap.completedLessons.includes(id) && snap.scenarioId !== id;
-          const current = snap.scenarioId === id;
-          const done = snap.completedLessons.includes(id);
+    <Dialog title="Level map" onClose={onClose} wide>
+      <p className="desc">
+        Each level teaches one idea. Finish one (or skip it after a few minutes) to open the next. <strong>★ {stars} / 30</strong>
+      </p>
+      <ol className="level-path">
+        {all.map((l) => {
+          const state = l.current ? 'current' : l.completed ? 'done' : l.unlocked ? 'open' : 'locked';
           return (
-            <li key={e.id} className={lock ? 'locked' : ''}>
+            <li key={l.id} className={`node ${state}`}>
               <button
                 type="button"
-                className={`journal-item ${current ? 'current' : ''}`}
-                disabled={lock}
+                disabled={!l.unlocked}
                 onClick={() => {
-                  controller.loadScenario(id, false);
+                  if (!l.current) controller.startLevel(l.id);
                   onClose();
                 }}
+                aria-label={`${l.num ? `Level ${l.num}` : 'Sandbox'}: ${l.title}. ${l.completed ? `${l.stars} stars` : l.skipped ? 'skipped' : l.unlocked ? 'open' : 'locked'}${l.current ? ', you are here' : ''}`}
               >
-                <span className="goal-key" aria-hidden="true">
-                  {lock ? <Icon name="lock" size={16} /> : done ? <Icon name="check" size={16} /> : <Icon name="map" size={16} />}
+                <span className="node-num" aria-hidden="true">
+                  {!l.unlocked ? <Icon name="lock" size={18} /> : l.num || <Icon name="sprout" size={18} />}
                 </span>
-                <span>
-                  <strong>
-                    {e.title}
-                    {current ? ' (here)' : ''}
-                  </strong>
-                  <span className="desc">{lock ? 'Complete the previous lesson to unlock.' : done ? 'Completed — tap to return' : 'Tap to play'}</span>
+                <span className="node-text">
+                  <strong>{l.title}</strong>
+                  <span className="bn">{l.bn}</span>
+                  <span className="node-meta">
+                    {l.completed ? <Stars n={l.stars} size={14} /> : l.skipped ? <span className="desc">Skipped</span> : l.current ? <span className="desc">You are here</span> : null}
+                  </span>
+                  {l.tools.length ? (
+                    <span className="node-tools" aria-hidden="true">
+                      {l.tools.map((t) => (
+                        <Icon key={t} name={TOOL_INFO[t].icon} size={16} />
+                      ))}
+                    </span>
+                  ) : null}
                 </span>
               </button>
             </li>
@@ -172,10 +136,4 @@ export function LevelSelectDialog({ snap, controller, onClose }: { snap: HudSnap
       </ol>
     </Dialog>
   );
-}
-
-function prevLesson(id: string): string {
-  const order = ['lesson-1', 'lesson-2', 'lesson-3', 'lesson-4', 'lesson-5', 'village'];
-  const i = order.indexOf(id);
-  return i > 0 ? order[i - 1] : 'lesson-1';
 }

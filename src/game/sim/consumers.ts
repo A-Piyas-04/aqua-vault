@@ -52,32 +52,61 @@ function gravityIntake(state: GameState, b: Building, flags: TileFlags, maxTotal
   return taken;
 }
 
-export function hasWaterNearby(state: GameState, b: Building, flags: TileFlags): boolean {
+/** Taps beside a house (4-neighbourhood), in deterministic order. */
+export function houseTaps(state: GameState, house: Building): Building[] {
   const g = state.grid;
-  for (const t of perimeterCells(g, b)) {
-    if (flags.passable[t] && g.water[t] > CONFIG.water.wetThreshold) return true;
-    const s = getBuilding(state, g.structure[t]);
-    if (s && STORAGE_TYPES.has(s.type) && s.water > 1) return true;
-  }
-  return false;
-}
-
-export function houseHasTap(state: GameState, house: Building): boolean {
-  const g = state.grid;
+  const out: Building[] = [];
   for (const [dx, dy] of NEIGHBORS) {
     const x = house.x + dx;
     const y = house.y + dy;
     if (!inBounds(g, x, y)) continue;
     const s = getBuilding(state, g.structure[idx(g, x, y)]);
-    if (s && s.type === 'connector') return true;
+    if (s && s.type === 'connector') out.push(s);
   }
-  return false;
+  return out;
+}
+
+export function houseHasTap(state: GameState, house: Building): boolean {
+  return houseTaps(state, house).length > 0;
+}
+
+/** Manhattan distance from a tile to the nearest tile of a building footprint. */
+export function distanceToFootprint(x: number, y: number, b: Building): number {
+  const dx = x < b.x ? b.x - x : x >= b.x + b.w ? x - (b.x + b.w - 1) : 0;
+  const dy = y < b.y ? b.y - y : y >= b.y + b.h ? y - (b.y + b.h - 1) : 0;
+  return dx + dy;
+}
+
+/** Treatment plants a tap can reach through its sealed pipe, nearest first. */
+export function plantsInReach(state: GameState, tap: Building): Building[] {
+  const range = CONFIG.connector.pipeRange;
+  return state.buildings
+    .filter((p) => p.type === 'treatment' && distanceToFootprint(tap.x, tap.y, p) <= range)
+    .sort((a, b) => distanceToFootprint(tap.x, tap.y, a) - distanceToFootprint(tap.x, tap.y, b) || a.id - b.id);
+}
+
+/** Fish ponds next to a fountain that ran last tick (fountains are evaluated after ponds). */
+function aeratedPonds(state: GameState): Set<number> {
+  const g = state.grid;
+  const out = new Set<number>();
+  for (const f of state.buildings) {
+    if (f.type !== 'fountain' || !f.active) continue;
+    for (const [dx, dy] of NEIGHBORS) {
+      const x = f.x + dx;
+      const y = f.y + dy;
+      if (!inBounds(g, x, y)) continue;
+      const p = getBuilding(state, g.structure[idx(g, x, y)]);
+      if (p && p.type === 'fishpond') out.add(p.id);
+    }
+  }
+  return out;
 }
 
 export function stepConsumers(state: GameState, flags: TileFlags, storageIn: Map<number, number>, evapMult: number): void {
   const L = state.ledger;
   const sinks = state.flags.sinks;
   const g = state.grid;
+  const aerated = aeratedPonds(state);
 
   for (const b of state.buildings) {
     switch (b.type) {
@@ -125,7 +154,7 @@ export function stepConsumers(state: GameState, flags: TileFlags, storageIn: Map
           b.status = b.water >= storageCapacity('reservoir') - 0.5 ? 'full' : b.water < 1 ? 'noWater' : '';
         } else if (b.type === 'fishpond') {
           const P = CONFIG.fishpond;
-          const target = Math.min(1, 0.3 + b.inflowAvg * 1.2);
+          const target = Math.min(1, 0.3 + b.inflowAvg * 1.2 + (aerated.has(b.id) ? CONFIG.fountain.aeration : 0));
           b.quality += Math.sign(target - b.quality) * Math.min(Math.abs(target - b.quality), 0.002);
           const enough = b.water >= P.minFill;
           const healthy = b.quality >= P.minQuality;
@@ -196,34 +225,41 @@ export function stepConsumers(state: GameState, flags: TileFlags, storageIn: Map
     }
   }
 
-  // Homes: clean water through taps (from treatment tanks only), lights from batteries.
-  const plants = state.buildings.filter((b) => b.type === 'treatment');
+  // Homes: taps refill each home's clean-water pot from treatment plants within reach;
+  // the home drinks from its pot, so a brief gap in production does not cut it off.
   const battery = hasBattery(state);
+  const H = CONFIG.house;
   for (const b of state.buildings) {
     if (b.type !== 'house') continue;
-    const tap = houseHasTap(state, b);
+    const taps = houseTaps(state, b);
     b.supplied = false;
     b.flow = 0;
-    if (tap && sinks) {
-      const need = CONFIG.house.cleanPerTick;
-      const avail = plants.reduce((s, p) => s + p.clean, 0);
-      if (avail >= need - 1e-9) {
-        let left = need;
+    let reachable = false;
+    if (sinks) {
+      let room = Math.min(H.refillPerTick, Math.max(0, H.potCap - b.water));
+      for (const tap of taps) {
+        const plants = plantsInReach(state, tap);
+        if (plants.length) reachable = true;
         for (const p of plants) {
-          const a = Math.min(p.clean, left);
+          if (room <= 1e-12) break;
+          const a = Math.min(p.clean, room);
           p.clean -= a;
-          left -= a;
-          if (left <= 0) break;
+          b.water += a;
+          room -= a;
         }
-        L.householdUse += need;
+      }
+      if (taps.length && b.water >= H.cleanPerTick - 1e-9) {
+        const use = Math.min(b.water, H.cleanPerTick);
+        b.water -= use;
+        L.householdUse += use;
         b.supplied = true;
-        b.flow = need;
+        b.flow = use;
       }
     }
     b.lit = battery && drawEnergy(state, CONFIG.house.energyPerTick);
     if (b.supplied) b.progress = Math.min(600, b.progress + 1);
     b.active = b.supplied;
-    b.status = !tap ? 'noTap' : !b.supplied ? 'noClean' : !b.lit ? 'noBattery' : '';
+    b.status = !taps.length ? 'noTap' : !b.supplied ? (reachable || !sinks ? 'noClean' : 'tooFar') : !b.lit ? 'noBattery' : '';
   }
   for (const b of state.buildings) {
     if (b.type === 'connector') {
@@ -235,8 +271,10 @@ export function stepConsumers(state: GameState, flags: TileFlags, storageIn: Map
         const h = getBuilding(state, g.structure[idx(g, x, y)]);
         if (h && h.type === 'house' && h.supplied) served = true;
       }
+      const plants = plantsInReach(state, b);
+      b.hostId = plants.length ? plants[0].id : -1;
       b.active = served;
-      b.status = served ? '' : plants.length === 0 ? 'noClean' : 'idle';
+      b.status = served ? '' : plants.length === 0 ? 'tooFar' : 'noClean';
     } else if (b.type === 'fountain') {
       let wet = false;
       for (const [dx, dy] of NEIGHBORS) {
@@ -245,6 +283,8 @@ export function stepConsumers(state: GameState, flags: TileFlags, storageIn: Map
         if (!inBounds(g, x, y)) continue;
         const t = idx(g, x, y);
         if (flags.passable[t] && g.water[t] >= CONFIG.fountain.minWater) wet = true;
+        const s = getBuilding(state, g.structure[t]);
+        if (s && STORAGE_TYPES.has(s.type) && s.water >= CONFIG.fountain.minWater) wet = true;
       }
       b.active = wet && drawEnergy(state, CONFIG.fountain.energyPerTick);
       b.status = !wet ? 'noWater' : b.active ? '' : 'needsPower';
@@ -302,6 +342,7 @@ export function stepPump(state: GameState, b: Building, flags: TileFlags): void 
   const inn = waterEnd(state, flags, b.x - dx, b.y - dy);
   b.rate = 0;
   b.flow = 0;
+  b.head = 0;
   b.active = false;
   if (!inn || inn.get() <= 1e-6) {
     b.status = 'pumpNoWater';
@@ -312,6 +353,7 @@ export function stepPump(state: GameState, b: Building, flags: TileFlags): void 
     return;
   }
   const lift = Math.max(0, out.elev - inn.elev);
+  b.head = lift;
   const costPerVol = P.energyPerVolume * (1 + P.liftFactor * lift);
   let vol = Math.min(P.maxPerTick, inn.get(), out.room());
   vol = Math.min(vol, state.resources.energy / costPerVol);

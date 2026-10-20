@@ -232,6 +232,102 @@ const ICONS: Record<string, ReactElement> = {
       <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />
     </g>
   ),
+  starFill: (
+    <g>
+      <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" />
+    </g>
+  ),
+  house: (
+    <g {...P}>
+      <path d="M3 11l9-7 9 7" />
+      <path d="M5 10v10h14V10" />
+      <path d="M10 20v-5h4v5" />
+    </g>
+  ),
+  fish: (
+    <g {...P}>
+      <path d="M3 12c3-5 9-6 13-2l5-3v10l-5-3c-4 4-10 3-13-2z" />
+      <circle cx="8" cy="11" r=".6" fill="currentColor" />
+    </g>
+  ),
+  menu: (
+    <g {...P}>
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </g>
+  ),
+  rotateL: (
+    <g {...P}>
+      <path d="M4 12a8 8 0 108-8" />
+      <path d="M4 4v5h5" />
+    </g>
+  ),
+  rotateR: (
+    <g {...P}>
+      <path d="M20 12a8 8 0 11-8-8" />
+      <path d="M20 4v5h-5" />
+    </g>
+  ),
+  eye: (
+    <g {...P}>
+      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </g>
+  ),
+  fast: (
+    <g {...P}>
+      <path d="M4 6l7 6-7 6zM12 6l7 6-7 6z" />
+    </g>
+  ),
+  heights: (
+    <g {...P}>
+      <path d="M2 19l6-9 4 5 3-4 7 8z" />
+      <path d="M15 7h4M17 5v4" />
+    </g>
+  ),
+  restart: (
+    <g {...P}>
+      <path d="M4 4v6h6" />
+      <path d="M5 15a8 8 0 102-9L4 10" />
+    </g>
+  ),
+  skip: (
+    <g {...P}>
+      <path d="M5 5l9 7-9 7zM18 5v14" />
+    </g>
+  ),
+  clock: (
+    <g {...P}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </g>
+  ),
+  chevronDown: (
+    <g {...P}>
+      <path d="M6 9l6 6 6-6" />
+    </g>
+  ),
+  chevronUp: (
+    <g {...P}>
+      <path d="M6 15l6-6 6 6" />
+    </g>
+  ),
+  arrowRight: (
+    <g {...P}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </g>
+  ),
+  info: (
+    <g {...P}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v6M12 7.5v.5" />
+    </g>
+  ),
+  sprout: (
+    <g {...P}>
+      <path d="M12 21v-9" />
+      <path d="M12 12c0-4 3-6 7-6 0 4-3 6-7 6zM12 14c0-3-2-5-6-5 0 3 2 5 6 5z" />
+    </g>
+  ),
 };
 
 export function Icon({ name, size = 22, title }: { name: string; size?: number; title?: string }) {

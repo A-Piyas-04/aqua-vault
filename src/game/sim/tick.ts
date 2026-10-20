@@ -2,6 +2,7 @@ import type { Command, GameEvent, GameState } from '../model/types';
 import { applyCommand } from './commands';
 import { stepConsumers } from './consumers';
 import { stepTurbines } from './power';
+import { evaluateObjectives } from './objectives';
 import { checkProgression } from './progression';
 import { addRain, applyTileSinks, computeTileFlags, infiltrate, stepFlux, totalWater } from './water';
 import { evaporationMultiplier, stepWeather } from './weather';
@@ -50,6 +51,7 @@ export function stepGame(state: GameState, commands: Command[] = []): StepResult
   }
 
   checkProgression(state, events);
+  evaluateObjectives(state, events);
   state.tick += 1;
 
   L.total = totalWater(state);

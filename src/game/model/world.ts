@@ -1,7 +1,8 @@
 import { CONFIG } from './config';
-import type { Building, BuildingType, GameState, Grid, ScenarioId, Terrain } from './types';
-import { getScenario } from '../content/scenarios';
+import type { Building, BuildingType, GameState, Grid, LevelId, Terrain } from './types';
+import { getLevel } from '../content/campaign';
 import { seedToState } from '../sim/rng';
+import { scriptedWeather } from '../sim/weather';
 
 export const DEFAULT_SEED = 1527;
 
@@ -77,8 +78,9 @@ export function unstampBuilding(grid: Grid, b: Building): void {
   }
 }
 
-export function createInitialState(seed = DEFAULT_SEED, scenarioId: ScenarioId = 'village'): GameState {
-  const world = getScenario(scenarioId);
+export function createInitialState(seed = DEFAULT_SEED, levelId: LevelId = 'village'): GameState {
+  const level = getLevel(levelId);
+  const world = level.build();
   const grid = createGrid(world.terrain, world.elevation, world.w, world.h, world.bed);
   const buildings: Building[] = [];
   let nextId = 1;
@@ -93,6 +95,7 @@ export function createInitialState(seed = DEFAULT_SEED, scenarioId: ScenarioId =
     b.builtin = spec.builtin;
     if (spec.progress !== undefined) b.progress = spec.progress;
     if (spec.water !== undefined) b.water = spec.water;
+    if (spec.dir !== undefined) b.dir = spec.dir;
     buildings.push(b);
     stampBuilding(grid, b);
   }
@@ -119,12 +122,14 @@ export function createInitialState(seed = DEFAULT_SEED, scenarioId: ScenarioId =
     nextBuildingId: nextId,
     resources: {
       materials: world.startMaterials,
-      xp: world.startXp,
       energy: 0,
       freeCanals: world.freeCanals,
+      freeCanalsMax: world.freeCanals,
     },
     achievements: [],
-    weather: { ...world.weather },
+    weather: level.weatherScript ? scriptedWeather(level.weatherScript.steps[0]) : { ...world.weather },
+    weatherStep: level.weatherScript ? 0 : -1,
+    dayOffset: level.dayOffset ?? 0,
     ledger: {
       rainAdded: 0,
       evaporation: 0,
@@ -138,13 +143,13 @@ export function createInitialState(seed = DEFAULT_SEED, scenarioId: ScenarioId =
       energyUsed: 0,
     },
     history: [],
-    lastHarvestXpTick: -1e9,
     regenTimer: 0,
     lastCleanTick: -1e9,
-    settings: { sound: false, reducedMotion: false, speed: 1, tutorialDone: false },
     flags: { rain: true, sinks: true },
-    scenarioId: world.id,
-    allowedTools: world.allowedTools ? [...world.allowedTools] : null,
+    levelId: level.id,
+    allowedTools: [...level.tools],
+    objectives: { done: [], sustain: {}, completedTick: null, stars: 0 },
+    stats: { spent: 0, harvestRice: 0, harvestFish: 0, harvestGarden: 0, stocked: 0 },
   };
 }
 

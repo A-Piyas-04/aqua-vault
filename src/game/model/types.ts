@@ -112,11 +112,12 @@ export interface Weather {
 
 export interface Resources {
   materials: number;
-  xp: number;
   /** Electricity stored in the battery bank (game units). */
   energy: number;
   /** Remaining free starter canal segments. */
   freeCanals: number;
+  /** The level's starting free canal allowance; undo and erase never exceed it. */
+  freeCanalsMax: number;
 }
 
 export interface Ledger {
@@ -135,20 +136,45 @@ export interface Ledger {
 
 export type HistoryEntry =
   | { kind: 'canal'; cells: number[]; paid: number; freeUsed: number; stroke?: number }
-  | { kind: 'eraseCanal'; cells: { i: number; gate: number; bridge: number }[]; refund: number; stroke?: number }
+  | { kind: 'eraseCanal'; cells: { i: number; gate: number; bridge: number }[]; refund: number; freeReturned: number; stroke?: number }
   | { kind: 'place'; buildingId: number; paid: number }
   | { kind: 'eraseBuilding'; building: Building; refund: number }
   | { kind: 'gate'; cell: number; paid: number }
   | { kind: 'bridge'; cell: number; paid: number };
 
-export interface Settings {
-  sound: boolean;
-  reducedMotion: boolean;
-  speed: 1 | 2;
-  tutorialDone: boolean;
+export type LevelId =
+  | 'first-canal'
+  | 'downhill'
+  | 'gates-harvest'
+  | 'save-rain'
+  | 'wheel-light'
+  | 'clean-water'
+  | 'fish-pond'
+  | 'wetland-garden'
+  | 'lift-water'
+  | 'village'
+  | 'sandbox';
+
+/** Objective progress for the current level. Latched ids never leave `done`. */
+export interface ObjectiveState {
+  done: string[];
+  /** Consecutive-tick counters for sustain objectives. */
+  sustain: Record<string, number>;
+  /** Tick the last required objective latched, or null while the level is in progress. */
+  completedTick: number | null;
+  /** Stars earned at completion (0 while in progress). */
+  stars: number;
 }
 
-export type ScenarioId = 'lesson-1' | 'lesson-2' | 'lesson-3' | 'lesson-4' | 'lesson-5' | 'village';
+/** Serializable counters used by objectives and star ratings. */
+export interface LevelStats {
+  /** Net materials spent on building (refunds subtract). Free canals cost nothing. */
+  spent: number;
+  harvestRice: number;
+  harvestFish: number;
+  harvestGarden: number;
+  stocked: number;
+}
 
 export interface GameState {
   version: number;
@@ -161,21 +187,23 @@ export interface GameState {
   resources: Resources;
   achievements: string[];
   weather: Weather;
+  /** Index into the level's scripted weather, or -1 for seeded random weather. */
+  weatherStep: number;
+  /** Ticks added to the day clock, so a level can start at dusk. */
+  dayOffset: number;
   ledger: Ledger;
   history: HistoryEntry[];
-  /** Tick of the last repeatable harvest XP grant (anti-exploit cooldown). */
-  lastHarvestXpTick: number;
   /** Ticks since materials regen (anti-softlock). */
   regenTimer: number;
   /** Tick of last successful treatment output, for bloom checks. */
   lastCleanTick: number;
-  settings: Settings;
   /** Sandbox options for tests / dev; persisted. */
   flags: { rain: boolean; sinks: boolean };
-  /** Current map. Missing on old saves; migrations fill `village`. */
-  scenarioId: ScenarioId;
-  /** When set, only these tools (plus inspect/erase) may be used. Null = XP unlocks. */
-  allowedTools: ToolId[] | null;
+  levelId: LevelId;
+  /** Tools this level allows (inspect and erase are always allowed). */
+  allowedTools: ToolId[];
+  objectives: ObjectiveState;
+  stats: LevelStats;
 }
 
 export type Command =
@@ -188,14 +216,16 @@ export type Command =
   | { type: 'harvest'; buildingId: number }
   | { type: 'stock'; buildingId: number }
   | { type: 'rotate'; buildingId: number }
+  | { type: 'removeBuilding'; buildingId: number }
   | { type: 'undo' };
 
 export type GameEvent =
-  | { type: 'achievement'; id: string; xp: number; materials: number }
-  | { type: 'levelUp'; level: number }
+  | { type: 'achievement'; id: string; materials: number }
+  | { type: 'objective'; id: string }
+  | { type: 'levelComplete'; stars: number }
   | { type: 'error'; message: string; cell?: number }
   | { type: 'built'; what: string; cell: number }
   | { type: 'erased'; cell: number }
-  | { type: 'harvest'; buildingId: number; materials: number; xp: number }
+  | { type: 'harvest'; buildingId: number; materials: number }
   | { type: 'stocked'; buildingId: number }
   | { type: 'undo'; ok: boolean };

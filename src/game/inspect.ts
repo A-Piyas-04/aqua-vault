@@ -4,7 +4,7 @@ import type { Building, GameState } from './model/types';
 import { GATE_CLOSED } from './model/types';
 import { getBuilding } from './model/world';
 import { STATUS_TEXT, TOOL_INFO } from './content/strings';
-import { fieldStage, houseHasTap, isRipe } from './sim/consumers';
+import { distanceToFootprint, fieldStage, houseHasTap, isRipe, plantsInReach } from './sim/consumers';
 import { energyCapacity } from './sim/power';
 
 export type InspectAction = 'harvest' | 'stock' | 'rotate' | 'toggleGate' | 'remove';
@@ -91,14 +91,18 @@ export function inspectBuilding(state: GameState, b: Building): InspectInfo {
       note = 'Fictional compact plant. Real rainwater may carry germs and chemicals; boiling kills germs but does not remove chemicals.';
       break;
     case 'connector': {
-      const total = state.buildings.filter((p) => p.type === 'treatment').reduce((s, p) => s + p.clean, 0);
-      lines.push({ label: 'Clean water available', value: f1(total) });
+      const plants = plantsInReach(state, b);
+      const total = plants.reduce((s, p) => s + p.clean, 0);
+      lines.push({ label: 'Piped from', value: plants.length ? `treatment plant, ${distanceToFootprint(b.x, b.y, plants[0])} tiles` : 'nothing in reach' });
+      lines.push({ label: 'Clean water in reach', value: f1(total) });
       lines.push({ label: 'Serving a home', value: b.active ? 'yes' : 'no' });
+      note = `Sealed pipes reach treatment plants up to ${CONFIG.connector.pipeRange} tiles away.`;
       break;
     }
     case 'house':
       lines.push({ label: 'Tap', value: houseHasTap(state, b) ? 'connected' : 'none' });
       lines.push({ label: 'Clean water', value: b.supplied ? 'flowing' : 'none' });
+      lines.push({ label: 'Water pot (কলসি)', value: `${f1(b.water)} / ${CONFIG.house.potCap}` });
       lines.push({ label: 'Lights', value: b.lit ? 'on' : 'off' });
       break;
     case 'floating': {
@@ -113,14 +117,16 @@ export function inspectBuilding(state: GameState, b: Building): InspectInfo {
       lines.push({ label: 'Moving', value: perSec(b.flow) });
       lines.push({ label: 'Energy use', value: `${f1(b.rate * CONFIG.ticksPerSecond)} /s` });
       lines.push({ label: 'Facing', value: ['north', 'east', 'south', 'west'][b.dir] });
+      lines.push({ label: 'Lift', value: b.active ? `${b.head} step${b.head === 1 ? '' : 's'} up` : '-' });
       actions.push({ id: 'rotate', label: 'Rotate', enabled: true, buildingId: b.id });
       note = 'Lifting water always costs more energy than a wheel could win back.';
       break;
     case 'fountain':
       lines.push({ label: 'Running', value: b.active ? 'yes' : 'no' });
+      note = 'Beside a fish pond, a running fountain aerates the water.';
       break;
   }
-  if (!b.builtin) actions.push({ id: 'remove', label: 'Remove (refund half)', enabled: true, buildingId: b.id });
+  if (!b.builtin) actions.push({ id: 'remove', label: `Remove (+${Math.floor(CONFIG.costs[b.type as keyof typeof CONFIG.costs] * CONFIG.eraseRefund.building)})`, enabled: true, buildingId: b.id });
   const status = b.status ? STATUS_TEXT[b.status] ?? b.status : b.active || b.type === 'house' ? 'Working' : '';
   return {
     key: `b${b.id}`,

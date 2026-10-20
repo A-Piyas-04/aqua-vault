@@ -3,6 +3,7 @@ import {
   canDigCanal,
   CANAL_TERRAIN,
   isUnlocked,
+  NOT_AVAILABLE,
   storageCapacity,
   STORAGE_TYPES,
   validatePlacement,
@@ -11,10 +12,15 @@ import type { Building, Command, GameEvent, GameState, HistoryEntry } from '../m
 import { GATE_CLOSED, GATE_NONE, GATE_OPEN } from '../model/types';
 import { createBuilding, getBuilding, idx, stampBuilding, unstampBuilding } from '../model/world';
 import { isRipe } from './consumers';
-import { addXp, grantAchievement, hasAchievement } from './progression';
+import { grantAchievement } from './progression';
 import { perimeterCells } from './water';
 
 const W = CONFIG.water;
+
+/** Net building spend for star ratings (refunds subtract). */
+function spend(state: GameState, amount: number): void {
+  state.stats.spent += amount;
+}
 
 function pushHistory(state: GameState, entry: HistoryEntry): void {
   state.history.push(entry);
@@ -68,39 +74,56 @@ function snapshotBuilding(b: Building): Building {
   return { ...b, water: 0, clean: 0 };
 }
 
-function eraseCell(state: GameState, cell: number, includeBuildings: boolean, events: GameEvent[], erasedCanals: { i: number; gate: number; bridge: number }[]): number {
+interface EraseTally {
+  canals: { i: number; gate: number; bridge: number }[];
+  refund: number;
+  freeReturned: number;
+}
+
+function eraseBuilding(state: GameState, target: Building, events: GameEvent[], cell: number): boolean {
+  if (target.builtin) {
+    events.push({ type: 'error', message: 'Part of the village: cannot be removed', cell });
+    return false;
+  }
+  const r = Math.floor(CONFIG.costs[target.type as keyof typeof CONFIG.costs] * CONFIG.eraseRefund.building);
+  const snap = snapshotBuilding(target);
+  removeBuilding(state, target);
+  state.resources.materials += r;
+  spend(state, -r);
+  pushHistory(state, { kind: 'eraseBuilding', building: snap, refund: r });
+  events.push({ type: 'erased', cell });
+  return true;
+}
+
+function eraseCell(state: GameState, cell: number, includeBuildings: boolean, events: GameEvent[], tally: EraseTally): void {
   const g = state.grid;
-  let refund = 0;
+  const R = state.resources;
   if (includeBuildings) {
     const x = cell % g.w;
     const y = Math.floor(cell / g.w);
     const floating = state.buildings.find((b) => b.type === 'floating' && b.x === x && b.y === y);
     const target = floating ?? getBuilding(state, g.structure[cell]);
     if (target) {
-      if (target.builtin) {
-        events.push({ type: 'error', message: 'Part of the village: cannot be removed', cell });
-        return 0;
-      }
-      const r = Math.floor(CONFIG.costs[target.type as keyof typeof CONFIG.costs] * CONFIG.eraseRefund);
-      const snap = snapshotBuilding(target);
-      removeBuilding(state, target);
-      state.resources.materials += r;
-      pushHistory(state, { kind: 'eraseBuilding', building: snap, refund: r });
-      events.push({ type: 'erased', cell });
-      return 0;
+      eraseBuilding(state, target, events, cell);
+      return;
     }
   }
   if (g.canal[cell] && g.structure[cell] < 0) {
-    erasedCanals.push({ i: cell, gate: g.gate[cell], bridge: g.bridge[cell] });
-    refund += CONFIG.costs.canal * CONFIG.eraseRefund;
-    if (g.gate[cell]) refund += Math.floor(CONFIG.costs.gate * CONFIG.eraseRefund);
-    if (g.bridge[cell]) refund += Math.floor(CONFIG.costs.bridge * CONFIG.eraseRefund);
+    tally.canals.push({ i: cell, gate: g.gate[cell], bridge: g.bridge[cell] });
+    // The tile goes back to the free allowance when there is room; otherwise half a material.
+    if (R.freeCanals < R.freeCanalsMax) {
+      R.freeCanals += 1;
+      tally.freeReturned += 1;
+    } else {
+      tally.refund += CONFIG.costs.canal * CONFIG.eraseRefund.canal;
+    }
+    if (g.gate[cell]) tally.refund += Math.floor(CONFIG.costs.gate * CONFIG.eraseRefund.building);
+    if (g.bridge[cell]) tally.refund += Math.floor(CONFIG.costs.bridge * CONFIG.eraseRefund.building);
     g.canal[cell] = 0;
     g.gate[cell] = GATE_NONE;
     g.bridge[cell] = 0;
     events.push({ type: 'erased', cell });
   }
-  return refund;
 }
 
 export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void {
@@ -133,6 +156,7 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
         events.push({ type: 'built', what: 'canal', cell: c });
       }
       if (dug.length === 0) return;
+      spend(state, paid);
       const last = state.history[state.history.length - 1];
       if (cmd.stroke !== undefined && last && last.kind === 'canal' && last.stroke === cmd.stroke) {
         last.cells.push(...dug);
@@ -144,22 +168,27 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
       return;
     }
     case 'erase': {
-      const erased: { i: number; gate: number; bridge: number }[] = [];
-      let refund = 0;
+      const tally: EraseTally = { canals: [], refund: 0, freeReturned: 0 };
       for (const c of cmd.cells) {
         if (c < 0 || c >= g.terrain.length) continue;
-        refund += eraseCell(state, c, !!cmd.includeBuildings, events, erased);
+        eraseCell(state, c, !!cmd.includeBuildings, events, tally);
       }
-      if (erased.length === 0) return;
-      const canalRefund = refund;
-      R.materials += canalRefund;
+      if (tally.canals.length === 0) return;
+      R.materials += tally.refund;
+      spend(state, -tally.refund);
       const last = state.history[state.history.length - 1];
       if (cmd.stroke !== undefined && last && last.kind === 'eraseCanal' && last.stroke === cmd.stroke) {
-        last.cells.push(...erased);
-        last.refund += canalRefund;
+        last.cells.push(...tally.canals);
+        last.refund += tally.refund;
+        last.freeReturned += tally.freeReturned;
       } else {
-        pushHistory(state, { kind: 'eraseCanal', cells: erased, refund: canalRefund, stroke: cmd.stroke });
+        pushHistory(state, { kind: 'eraseCanal', cells: tally.canals, refund: tally.refund, freeReturned: tally.freeReturned, stroke: cmd.stroke });
       }
+      return;
+    }
+    case 'removeBuilding': {
+      const b = getBuilding(state, cmd.buildingId);
+      if (b) eraseBuilding(state, b, events, idx(g, b.x, b.y));
       return;
     }
     case 'place': {
@@ -171,6 +200,7 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
       const b = createBuilding(state.nextBuildingId++, cmd.building, cmd.x, cmd.y);
       if (b.type === 'floating') b.hostId = g.structure[idx(g, cmd.x, cmd.y)];
       R.materials -= check.cost;
+      spend(state, check.cost);
       state.buildings.push(b);
       stampBuilding(g, b);
       if (STORAGE_TYPES.has(b.type)) absorbFootprintWater(state, b, storageCapacity(b.type));
@@ -182,6 +212,10 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
     }
     case 'gate': {
       const c = cmd.cell;
+      if (!isUnlocked(state, 'gate')) {
+        events.push({ type: 'error', message: NOT_AVAILABLE, cell: c });
+        return;
+      }
       if (!g.canal[c] || g.structure[c] >= 0) {
         events.push({ type: 'error', message: 'Gates go on canals', cell: c });
         return;
@@ -196,6 +230,7 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
         return;
       }
       R.materials -= CONFIG.costs.gate;
+      spend(state, CONFIG.costs.gate);
       g.gate[c] = GATE_OPEN;
       pushHistory(state, { kind: 'gate', cell: c, paid: CONFIG.costs.gate });
       events.push({ type: 'built', what: 'gate', cell: c });
@@ -203,7 +238,7 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
     }
     case 'toggleGate': {
       const c = cmd.cell;
-      if (!g.gate[c]) return;
+      if (!g.gate[c] || !isUnlocked(state, 'gate')) return;
       g.gate[c] = g.gate[c] === GATE_OPEN ? GATE_CLOSED : GATE_OPEN;
       events.push({ type: 'built', what: 'gate-toggle', cell: c });
       return;
@@ -211,7 +246,7 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
     case 'bridge': {
       const c = cmd.cell;
       if (!isUnlocked(state, 'bridge')) {
-        events.push({ type: 'error', message: `Unlocks at level ${CONFIG.unlockLevel.bridge}`, cell: c });
+        events.push({ type: 'error', message: NOT_AVAILABLE, cell: c });
         return;
       }
       if (!g.canal[c] || g.bridge[c] || g.structure[c] >= 0) {
@@ -223,6 +258,7 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
         return;
       }
       R.materials -= CONFIG.costs.bridge;
+      spend(state, CONFIG.costs.bridge);
       g.bridge[c] = 1;
       pushHistory(state, { kind: 'bridge', cell: c, paid: CONFIG.costs.bridge });
       events.push({ type: 'built', what: 'bridge', cell: c });
@@ -240,26 +276,22 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
         materials = CONFIG.field.harvestMaterials;
         b.progress = 0;
         firstId = 'first-harvest';
+        state.stats.harvestRice += 1;
       } else if (b.type === 'fishpond') {
         materials = CONFIG.fishpond.harvestMaterials;
         b.progress = 0;
         b.stocked = false;
         firstId = 'fish-harvest';
+        state.stats.harvestFish += 1;
       } else if (b.type === 'floating') {
         materials = CONFIG.floating.harvestMaterials;
         b.progress = 0;
         firstId = 'floating-harvest';
+        state.stats.harvestGarden += 1;
       }
       R.materials += materials;
-      let xp = 0;
-      if (!hasAchievement(state, firstId)) {
-        grantAchievement(state, firstId, events);
-      } else if (state.tick - state.lastHarvestXpTick >= CONFIG.progression.repeatHarvestCooldownTicks) {
-        xp = CONFIG.progression.repeatHarvestXp;
-        state.lastHarvestXpTick = state.tick;
-        addXp(state, xp, events);
-      }
-      events.push({ type: 'harvest', buildingId: b.id, materials, xp });
+      grantAchievement(state, firstId, events);
+      events.push({ type: 'harvest', buildingId: b.id, materials });
       return;
     }
     case 'stock': {
@@ -278,6 +310,8 @@ export function applyCommand(state: GameState, cmd: Command, events: GameEvent[]
         return;
       }
       R.materials -= CONFIG.fishpond.stockCost;
+      spend(state, CONFIG.fishpond.stockCost);
+      state.stats.stocked += 1;
       b.stocked = true;
       b.progress = 0;
       grantAchievement(state, 'fish-stocked', events);
@@ -317,12 +351,17 @@ function undo(state: GameState, events: GameEvent[]): void {
         g.bridge[c] = 0;
       }
       R.materials += entry.paid;
-      R.freeCanals = Math.min(CONFIG.progression.freeCanals, R.freeCanals + entry.freeUsed);
+      spend(state, -entry.paid);
+      R.freeCanals = Math.min(R.freeCanalsMax, R.freeCanals + entry.freeUsed);
       break;
     }
     case 'eraseCanal': {
+      const freeBack = entry.freeReturned ?? 0;
       if (R.materials < entry.refund) return failUndo('Not enough materials to undo');
+      if (R.freeCanals < freeBack) return failUndo('Those free canals were already used');
       R.materials -= entry.refund;
+      R.freeCanals -= freeBack;
+      spend(state, entry.refund);
       for (const c of entry.cells) {
         if (g.structure[c.i] >= 0 || !CANAL_TERRAIN.has(g.terrain[c.i])) continue;
         g.canal[c.i] = 1;
@@ -338,6 +377,7 @@ function undo(state: GameState, events: GameEvent[]): void {
       const b = getBuilding(state, entry.buildingId);
       if (b) removeBuilding(state, b);
       R.materials += entry.paid;
+      spend(state, -entry.paid);
       break;
     }
     case 'eraseBuilding': {
@@ -352,6 +392,7 @@ function undo(state: GameState, events: GameEvent[]): void {
         }
       }
       R.materials -= entry.refund;
+      spend(state, entry.refund);
       const restored: Building = { ...b, water: 0, clean: 0 };
       state.buildings.push(restored);
       state.buildings.sort((a, c) => a.id - c.id);
@@ -362,6 +403,7 @@ function undo(state: GameState, events: GameEvent[]): void {
       if (g.gate[entry.cell]) {
         g.gate[entry.cell] = GATE_NONE;
         R.materials += entry.paid;
+        spend(state, -entry.paid);
       }
       break;
     }
@@ -369,6 +411,7 @@ function undo(state: GameState, events: GameEvent[]): void {
       if (g.bridge[entry.cell]) {
         g.bridge[entry.cell] = 0;
         R.materials += entry.paid;
+        spend(state, -entry.paid);
       }
       break;
     }

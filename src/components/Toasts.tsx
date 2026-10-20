@@ -1,14 +1,17 @@
 'use client';
 
-import type { GameController, HudSnapshot } from '@/game/controller';
+import { memo } from 'react';
+import type { GameController } from '@/game/controller';
 import { Icon } from './Icons';
+import { useSlice } from './useGame';
 
-const ICON: Record<string, string> = { achievement: 'star', level: 'star', error: 'warn', info: 'leaf', harvest: 'coin' };
+const ICON: Record<string, string> = { achievement: 'coin', objective: 'check', error: 'warn', info: 'info', harvest: 'coin' };
 
-export default function Toasts({ snap, controller }: { snap: HudSnapshot; controller: GameController }) {
+function Toasts({ controller }: { controller: GameController }) {
+  const toasts = useSlice(controller, 'toasts') ?? [];
   return (
-    <div className="toasts" aria-live="polite">
-      {snap.toasts.map((t) => (
+    <div className="toasts" role="status" aria-live="polite">
+      {toasts.map((t) => (
         <button key={t.id} type="button" className={`toast ${t.kind}`} onClick={() => controller.dismissToast(t.id)} aria-label={`${t.title}${t.sub ? `. ${t.sub}` : ''}. Dismiss`}>
           <Icon name={ICON[t.kind]} size={18} />
           <span>
@@ -20,3 +23,5 @@ export default function Toasts({ snap, controller }: { snap: HudSnapshot; contro
     </div>
   );
 }
+
+export default memo(Toasts);

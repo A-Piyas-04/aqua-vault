@@ -1,39 +1,41 @@
-import type { GameState, ScenarioId } from '../model/types';
-import { isScenarioId } from '../content/scenarios';
+import type { GameState, LevelId } from '../model/types';
+import { isLevelId } from '../content/campaign';
 import { migrateSave, type LoadResult } from './migrations';
+import { defaultProfile, migrateProfileV2, sanitizeProfile, type Profile } from './profile';
 
 /** Optional backend seam (e.g. future cloud sync). Gameplay never depends on it. */
 export interface SaveRepository {
-  load(scenarioId?: ScenarioId): LoadResult;
+  load(levelId: LevelId): LoadResult;
   save(state: GameState): boolean;
-  clear(scenarioId?: ScenarioId): void;
-  loadProfile(): PlayerProfile;
-  saveProfile(profile: PlayerProfile): boolean;
+  clear(levelId?: LevelId): void;
+  loadProfile(): { profile: Profile; upgraded: boolean };
+  saveProfile(profile: Profile): boolean;
 }
 
-const PREFIX = 'aqua-vault:save:';
-const LEGACY_PREFIX = 'aqua-vault:save:';
-const PROFILE_KEY = 'aqua-vault:profile';
+/** Minimal Storage surface, so tests can pass an in-memory store. */
+export interface KeyValueStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+  readonly length: number;
+  key(index: number): string | null;
+}
+
+const PREFIX = 'aqua-vault:v3:level:';
+const PROFILE_KEY = 'aqua-vault:v3:profile';
 const SLOTS = ['a', 'b'] as const;
 
-export interface PlayerProfile {
-  currentScenario: ScenarioId;
-  completedLessons: string[];
-  unlockedJournal: string[];
-}
-
-export const DEFAULT_PROFILE: PlayerProfile = {
-  currentScenario: 'lesson-1',
-  completedLessons: [],
-  unlockedJournal: [],
-};
+// v2 layout, read once for the upgrade.
+const V2_PROFILE_KEY = 'aqua-vault:profile';
+const V2_PREFIX = 'aqua-vault:save:';
+const V2_VILLAGE_KEYS = [`${V2_PREFIX}village:a`, `${V2_PREFIX}village:b`, `${V2_PREFIX}a`, `${V2_PREFIX}b`];
 
 interface Envelope {
   savedAt: number;
   state: GameState;
 }
 
-function getStorage(): Storage | null {
+function browserStorage(): KeyValueStore | null {
   try {
     if (typeof window === 'undefined' || !window.localStorage) return null;
     return window.localStorage;
@@ -42,78 +44,80 @@ function getStorage(): Storage | null {
   }
 }
 
-export function serializeState(state: GameState): string {
-  return JSON.stringify(state);
+function slotKey(levelId: LevelId, slot: (typeof SLOTS)[number]): string {
+  return `${PREFIX}${levelId}:${slot}`;
 }
 
-function slotKey(scenarioId: ScenarioId, slot: (typeof SLOTS)[number]): string {
-  return `${PREFIX}${scenarioId}:${slot}`;
+function readEnvelope(store: KeyValueStore, key: string): Envelope | null {
+  try {
+    const raw = store.getItem(key);
+    if (!raw) return null;
+    const env = JSON.parse(raw) as Envelope;
+    return env && typeof env.savedAt === 'number' && env.state ? env : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * localStorage repository keeping two alternating generations per scenario, so a write
- * interrupted mid-way never destroys the last good save.
+ * localStorage repository: one profile, plus two alternating generations per level so a
+ * write interrupted mid-way never destroys the last good save.
  */
 export class LocalSaveRepository implements SaveRepository {
-  private nextSlot = 0;
+  private nextSlot = new Map<LevelId, number>();
+  /** Strictly increasing save stamps, so two saves in one millisecond still order correctly. */
+  private lastStamp = 0;
 
-  load(scenarioId: ScenarioId = 'village'): LoadResult {
-    const store = getStorage();
+  constructor(private readonly storeOverride?: KeyValueStore | null) {}
+
+  private get store(): KeyValueStore | null {
+    return this.storeOverride !== undefined ? this.storeOverride : browserStorage();
+  }
+
+  load(levelId: LevelId): LoadResult {
+    const store = this.store;
     if (!store) return { ok: false, reason: 'empty', message: 'Storage unavailable' };
     const envelopes: { slot: number; env: Envelope }[] = [];
-    let sawFuture: LoadResult | null = null;
-    const keys = SLOTS.map((slot, k) => ({ k, key: slotKey(scenarioId, slot) }));
-    if (scenarioId === 'village') {
-      SLOTS.forEach((slot, k) => keys.push({ k, key: LEGACY_PREFIX + slot }));
-    }
-    const seen = new Set<string>();
-    for (const { k, key } of keys) {
-      if (seen.has(key)) continue;
-      seen.add(key);
-      try {
-        const raw = store.getItem(key);
-        if (!raw) continue;
-        const env = JSON.parse(raw) as Envelope;
-        if (env && typeof env.savedAt === 'number' && env.state) envelopes.push({ slot: k, env });
-      } catch {
-        /* ignore a corrupt generation, fall back to the other */
-      }
-    }
+    SLOTS.forEach((slot, k) => {
+      const env = readEnvelope(store, slotKey(levelId, slot));
+      if (env) envelopes.push({ slot: k, env });
+    });
     envelopes.sort((a, b) => b.env.savedAt - a.env.savedAt);
+    let sawFuture: LoadResult | null = null;
     for (const { slot, env } of envelopes) {
       const res = migrateSave(env.state);
-      if (res.ok) {
-        if (res.state.scenarioId !== scenarioId && scenarioId !== 'village') continue;
-        this.nextSlot = (slot + 1) % SLOTS.length;
+      if (res.ok && res.state.levelId === levelId) {
+        this.nextSlot.set(levelId, (slot + 1) % SLOTS.length);
+        this.lastStamp = Math.max(this.lastStamp, env.savedAt);
         return res;
       }
-      if (res.reason === 'future') sawFuture = res;
+      if (!res.ok && res.reason === 'future') sawFuture = res;
     }
     if (sawFuture) return sawFuture;
-    return envelopes.length ? { ok: false, reason: 'corrupt', message: 'Saved world could not be read' } : { ok: false, reason: 'empty', message: 'No save yet' };
+    return envelopes.length ? { ok: false, reason: 'corrupt', message: 'Saved level could not be read' } : { ok: false, reason: 'empty', message: 'No save yet' };
   }
 
   save(state: GameState): boolean {
-    const store = getStorage();
-    if (!store) return false;
+    const store = this.store;
+    if (!store || !isLevelId(state.levelId)) return false;
     try {
-      const id = isScenarioId(state.scenarioId) ? state.scenarioId : 'village';
-      const env: Envelope = { savedAt: Date.now(), state };
-      store.setItem(slotKey(id, SLOTS[this.nextSlot]), JSON.stringify(env));
-      this.nextSlot = (this.nextSlot + 1) % SLOTS.length;
+      const slot = this.nextSlot.get(state.levelId) ?? 0;
+      this.lastStamp = Math.max(Date.now(), this.lastStamp + 1);
+      const env: Envelope = { savedAt: this.lastStamp, state };
+      store.setItem(slotKey(state.levelId, SLOTS[slot]), JSON.stringify(env));
+      this.nextSlot.set(state.levelId, (slot + 1) % SLOTS.length);
       return true;
     } catch {
       return false;
     }
   }
 
-  clear(scenarioId?: ScenarioId): void {
-    const store = getStorage();
+  clear(levelId?: LevelId): void {
+    const store = this.store;
     if (!store) return;
     try {
-      if (scenarioId) {
-        for (const s of SLOTS) store.removeItem(slotKey(scenarioId, s));
-        if (scenarioId === 'village') for (const s of SLOTS) store.removeItem(LEGACY_PREFIX + s);
+      if (levelId) {
+        for (const s of SLOTS) store.removeItem(slotKey(levelId, s));
       } else {
         for (let i = store.length - 1; i >= 0; i--) {
           const k = store.key(i);
@@ -125,31 +129,65 @@ export class LocalSaveRepository implements SaveRepository {
     }
   }
 
-  loadProfile(): PlayerProfile {
-    const store = getStorage();
-    const fallback = { ...DEFAULT_PROFILE };
-    if (!store) return fallback;
+  loadProfile(): { profile: Profile; upgraded: boolean } {
+    const store = this.store;
+    if (!store) return { profile: defaultProfile(), upgraded: false };
     try {
       const raw = store.getItem(PROFILE_KEY);
-      if (!raw) {
-        const legacy = store.getItem(LEGACY_PREFIX + 'a') || store.getItem(LEGACY_PREFIX + 'b');
-        if (legacy) {
-          return { currentScenario: 'village', completedLessons: [...LESSON_IDS, 'village'], unlockedJournal: [] };
-        }
-        return fallback;
-      }
-      const p = JSON.parse(raw) as Partial<PlayerProfile>;
-      const current = isScenarioId(p.currentScenario) ? p.currentScenario : 'lesson-1';
-      const completed = Array.isArray(p.completedLessons) ? p.completedLessons.filter((x) => typeof x === 'string') : [];
-      const journal = Array.isArray(p.unlockedJournal) ? p.unlockedJournal.filter((x) => typeof x === 'string') : [];
-      return { currentScenario: current, completedLessons: completed, unlockedJournal: journal };
+      if (raw) return { profile: sanitizeProfile(JSON.parse(raw)), upgraded: false };
     } catch {
-      return fallback;
+      return { profile: defaultProfile(), upgraded: false };
     }
+    return this.upgradeFromV2(store);
   }
 
-  saveProfile(profile: PlayerProfile): boolean {
-    const store = getStorage();
+  /**
+   * One-time upgrade from the v2 layout: map lesson progress onto the campaign and carry
+   * the village save over. Old keys are removed only after every v3 write succeeded.
+   */
+  private upgradeFromV2(store: KeyValueStore): { profile: Profile; upgraded: boolean } {
+    let oldProfile: unknown = null;
+    try {
+      const raw = store.getItem(V2_PROFILE_KEY);
+      if (raw) oldProfile = JSON.parse(raw);
+    } catch {
+      oldProfile = null;
+    }
+    const villageEnvs = V2_VILLAGE_KEYS.map((k) => readEnvelope(store, k)).filter((e): e is Envelope => !!e);
+    villageEnvs.sort((a, b) => b.savedAt - a.savedAt);
+    if (!oldProfile && villageEnvs.length === 0) return { profile: defaultProfile(), upgraded: false };
+
+    let village: GameState | null = null;
+    let legacySettings: unknown;
+    for (const env of villageEnvs) {
+      const res = migrateSave(env.state);
+      if (res.ok && res.state.levelId === 'village') {
+        village = res.state;
+        legacySettings = res.legacySettings;
+        break;
+      }
+    }
+    const profile = migrateProfileV2(oldProfile, !!village, legacySettings);
+    let ok = this.saveProfile(profile);
+    if (village) {
+      ok = this.save(village) && ok;
+    }
+    if (ok) {
+      try {
+        store.removeItem(V2_PROFILE_KEY);
+        for (let i = store.length - 1; i >= 0; i--) {
+          const k = store.key(i);
+          if (k && k.startsWith(V2_PREFIX)) store.removeItem(k);
+        }
+      } catch {
+        /* leave the old keys; they are harmless */
+      }
+    }
+    return { profile, upgraded: true };
+  }
+
+  saveProfile(profile: Profile): boolean {
+    const store = this.store;
     if (!store) return false;
     try {
       store.setItem(PROFILE_KEY, JSON.stringify(profile));
@@ -160,4 +198,24 @@ export class LocalSaveRepository implements SaveRepository {
   }
 }
 
-const LESSON_IDS = ['lesson-1', 'lesson-2', 'lesson-3', 'lesson-4', 'lesson-5'];
+/** In-memory store for tests and private-mode fallbacks. */
+export class MemoryStore implements KeyValueStore {
+  private data = new Map<string, string>();
+  failWrites = false;
+  getItem(key: string) {
+    return this.data.has(key) ? (this.data.get(key) as string) : null;
+  }
+  setItem(key: string, value: string) {
+    if (this.failWrites) throw new Error('quota');
+    this.data.set(key, value);
+  }
+  removeItem(key: string) {
+    this.data.delete(key);
+  }
+  get length() {
+    return this.data.size;
+  }
+  key(i: number) {
+    return [...this.data.keys()][i] ?? null;
+  }
+}
