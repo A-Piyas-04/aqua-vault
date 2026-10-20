@@ -137,6 +137,24 @@ describe('treatment and homes', () => {
     }
   });
 
+  it('a home pot rides out a short gap in clean water, then runs dry', () => {
+    const s = makeSandbox(8, 6, () => 2);
+    s.flags.sinks = true;
+    const house = place(s, 'house', 5, 4);
+    place(s, 'connector', 4, 4);
+    const plant = place(s, 'treatment', 0, 0);
+    plant.clean = CONFIG.house.potCap;
+    for (let k = 0; k < 20; k++) stepGame(s);
+    expect(plant.clean).toBe(0);
+    let suppliedTicks = 0;
+    for (let k = 0; k < 200; k++) {
+      stepGame(s);
+      if (house.supplied) suppliedTicks++;
+    }
+    expect(suppliedTicks).toBeGreaterThan(20);
+    expect(house.supplied).toBe(false);
+  });
+
   it('homes need a tap and clean water; raw water alone cannot supply them', () => {
     const s = makeSandbox(8, 6, () => 2);
     s.flags.sinks = true;
@@ -154,7 +172,9 @@ describe('treatment and homes', () => {
     plant.clean = 5;
     stepGame(s);
     expect(house.supplied).toBe(true);
-    expect(plant.clean).toBeCloseTo(5 - CONFIG.house.cleanPerTick, 9);
+    // Clean water moved into the home's pot; only what the home drank left the system.
+    expect(plant.clean).toBeCloseTo(5 - CONFIG.house.refillPerTick, 9);
+    expect(plant.clean + house.water).toBeCloseTo(5 - CONFIG.house.cleanPerTick, 9);
   });
 
   it('home lights need a battery with charge', () => {
@@ -252,5 +272,46 @@ describe('pump', () => {
     g.saturation[idx(g, 1, 1)] = 0;
     stepGame(s);
     expect(p.flow).toBe(0);
+  });
+});
+
+describe('pipes and aeration', () => {
+  it('a tap only reaches treatment plants within the pipe range', () => {
+    const s = makeSandbox(30, 4, () => 2);
+    s.flags.sinks = true;
+    const house = place(s, 'house', 1, 1);
+    place(s, 'connector', 2, 1);
+    const far = place(s, 'treatment', 2 + CONFIG.connector.pipeRange + 2, 1);
+    far.clean = 10;
+    stepGame(s);
+    expect(house.supplied).toBe(false);
+    expect(house.status).toBe('tooFar');
+    expect(far.clean).toBe(10);
+    const near = place(s, 'treatment', 4, 1);
+    near.clean = 5;
+    stepGame(s);
+    expect(house.supplied).toBe(true);
+    expect(near.clean + house.water).toBeCloseTo(5 - CONFIG.house.cleanPerTick, 9);
+    expect(far.clean).toBe(10);
+  });
+
+  it('a running fountain beside a still pond keeps it fresher', () => {
+    const run = (withFountain: boolean) => {
+      const s = makeSandbox(8, 6, () => 2);
+      const pond = place(s, 'fishpond', 1, 1);
+      pond.water = 100;
+      pond.quality = 0.4;
+      if (withFountain) {
+        place(s, 'fountain', 4, 2);
+        place(s, 'battery', 6, 5);
+        s.resources.energy = 100;
+      }
+      for (let k = 0; k < 400; k++) stepGame(s);
+      return pond.quality;
+    };
+    const still = run(false);
+    const aerated = run(true);
+    expect(still).toBeLessThan(CONFIG.fishpond.minQuality);
+    expect(aerated).toBeGreaterThan(CONFIG.fishpond.minQuality);
   });
 });

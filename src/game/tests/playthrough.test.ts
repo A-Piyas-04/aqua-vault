@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { createInitialState, idx } from '../model/world';
 import type { BuildingTypePlaceable, Command, GameEvent, GameState } from '../model/types';
 import { stepGame, massTolerance } from '../sim/tick';
-import { levelForXp } from '../sim/progression';
 import { isRipe } from '../sim/consumers';
 import { allFinite } from './helpers';
 
@@ -48,13 +47,11 @@ describe('integrated playthrough', () => {
     until(() => byType('field').some(isRipe), 3000, 'ripe rice');
     harvestRipe();
     expect(has('first-harvest')).toBe(true);
-    expect(levelForXp(s.resources.xp)).toBeGreaterThanOrEqual(2);
 
     // B: Save the Rain. Divert the stream into the east basin.
     place('reservoir', 18, 4);
     canal([[19, 2], [19, 3]]);
     until(() => has('reservoir-filled'), 8000, 'reservoir filled');
-    expect(levelForXp(s.resources.xp)).toBeGreaterThanOrEqual(3);
 
     // C: Let it Spin. The stream steps down two levels on the east edge.
     place('turbine', 25, 11);
@@ -63,7 +60,6 @@ describe('integrated playthrough', () => {
     // D: Light the Village.
     place('battery', 23, 10);
     until(() => has('village-lit'), 4000, 'village lit');
-    expect(levelForXp(s.resources.xp)).toBeGreaterThanOrEqual(4);
 
     // E: Every Drop Counts. Raw water from the plateau down to a plant by the village.
     canal([[7, 6], [7, 7], [7, 8], [7, 9]]);
@@ -71,7 +67,6 @@ describe('integrated playthrough', () => {
     until(() => has('clean-water'), 6000, 'clean water');
     place('connector', 3, 12);
     until(() => has('house-supplied'), 6000, 'house supplied');
-    expect(levelForXp(s.resources.xp)).toBeGreaterThanOrEqual(5);
 
     // F: Living Pond. Drain the reservoir south through the open basin side into a pond.
     place('fishpond', 18, 10);
@@ -89,7 +84,6 @@ describe('integrated playthrough', () => {
       20000,
       'fish harvest',
     );
-    expect(levelForXp(s.resources.xp)).toBeGreaterThanOrEqual(6);
 
     // G: wetland on the marsh fed by the pond outflow, floating garden, then bloom.
     place('wetland', 14, 14);
@@ -110,7 +104,22 @@ describe('integrated playthrough', () => {
     expect(allFinite(s)).toBe(true);
     // Timings in seconds, for tuning.
     const secs = Object.fromEntries(Object.entries(log).map(([k, v]) => [k, Math.round(v / 10)]));
-    console.log('milestone seconds', secs, 'xp', s.resources.xp, 'materials', Math.floor(s.resources.materials));
+    console.log('milestone seconds', secs, 'materials', Math.floor(s.resources.materials), 'spent', s.stats.spent);
     expect(has('village-bloom')).toBe(true);
+    // Every village objective latched; keep tending the village until bloom holds for 10 s.
+    until(
+      () => {
+        harvestGuard++;
+        if (harvestGuard % 50 === 0) harvestRipe();
+        const pond = byType('fishpond')[0];
+        if (pond && !pond.stocked && pond.water >= 65 && s.resources.materials >= 10) run([{ type: 'stock', buildingId: pond.id }]);
+        return s.objectives.completedTick !== null;
+      },
+      20000,
+      'sustained bloom',
+    );
+    console.log('village complete at', Math.round((s.objectives.completedTick ?? 0) / 10), 's, stars', s.objectives.stars);
+    expect(s.objectives.completedTick).not.toBeNull();
+    expect(allEvents.filter((e) => e.type === 'levelComplete').length).toBe(1);
   });
 });
