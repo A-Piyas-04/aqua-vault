@@ -28,3 +28,6 @@ Start with 120 materials; build/erase grants partial refund; harvest yields +10�
 
 ## Balance goals
 First irrigated field by minute 2; turbine by minute 5–8; first cleaned supply by minute 8–12; fish by minute 12–18 after onboarding for ordinary play. These are tunable targets, not guaranteed. If test play is too slow, reduce building requirements before adding automatic free resources.
+
+## Campaign balancing (v3)
+Starting materials, free canals and star pars are per level in `src/game/content/campaign.ts`; each par was set from a scripted solve (`campaign.test.ts`). Other changes: unlocks come from finishing levels, XP only drives the cosmetic Village Rank (thresholds `CONFIG.progression.ranks`, +10 XP per star); erasing a canal returns the tile to the free-canal allowance instead of materials (no refund exploit); taps reach treatment plants within `CONFIG.connector.pipeRange` (10) tiles; each home keeps a small clean-water pot (`CONFIG.house.potCap`); a powered fountain beside a pond raises its freshness target by `CONFIG.fountain.aeration`; fish growth is 1/1000 per tick.

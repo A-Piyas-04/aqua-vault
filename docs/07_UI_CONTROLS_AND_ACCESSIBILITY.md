@@ -20,3 +20,10 @@ Color isn't the sole signal; shape/pattern plus labels for clean/raw, powered/un
 
 ## Device tests
 320px wide phone portrait, 390px phone portrait, tablet, 1366px desktop. No sideways page scrolling; browser pinch/scroll conflicts prevented only on actual game canvas, not menus. Restart, build, play, save all work on touch without hover.
+
+## Progressive disclosure and writing rules (supersedes the fixed side panels above)
+The map fills the screen; UI floats over it. A slim top bar, an objective card (top-left), a bottom tool bar of **unlocked tools only**, and a popover inspector (a bottom sheet under 720 px).
+
+Each level declares which stats appear (`hud` in `campaign.ts`): L1 free canals; L2 + heights toggle and Journal; L3 + materials; L4 + stored water and speed; L5 + power; L6 + clean water; L7 + life; L10 + rank and stars. A new tool gets a one-time card (what it does, where it goes, what it needs) and a "New" badge.
+
+Instruction writing: one action per objective, imperative, at most 12 words, starting with a verb; always icon + text; name tools exactly as on the tool bar; put the "why" in the Journal, not on the card; Bangla subtitles on titles only. Dialogs trap focus, restore it on close and close on Esc. Keys: 1-0 tools, X erase, Q/E turn the view, F speed, M level map, J journal, P pause, H heights.

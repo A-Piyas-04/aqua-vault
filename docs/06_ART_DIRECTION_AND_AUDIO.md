@@ -1,7 +1,7 @@
 # Art Direction, Motion and Sound
 
 ## Look
-Cozy 2D miniature diorama in polished **hand-crafted vector/pixel-inspired** style. Avoid low-quality mixed-stock graphics. Single coherent visual language: top-down 2.5D hints, subtle shadows, rounded clean tile edges, lush illustrated vegetation, expressive water highlights. No photorealism and no bloated 3D engine.
+Cozy **low-poly 3D miniature diorama** (Three.js): a tilted orthographic camera over terrain blocks extruded by elevation, flat-shaded procedural models, soft shadows and a shader water surface that shows flow. Not photoreal; no imported meshes or textures (everything is generated in code). A classic top-down Canvas 2D renderer remains as the automatic fallback and as the "Classic 2D" setting. Single coherent palette below.
 
 ## Palette
 Rain #77BFD4, deep water #237E90, fresh green #5FAB67, rice gold #D8B65A, dark soil #78624E, clay #BE8060, sky #DCEEF0, night navy #25394D, warm home glow #FFD38A. Ensure UI text contrast independently of scenic colors.

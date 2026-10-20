@@ -17,3 +17,6 @@ Optional auth and cloud sync of compressed, versioned snapshots by user ID; neve
 
 ## Free hosting reality
 Frontend-only Next.js/static hosting is compatible with free-tier deployment subject to platform rules and resource quotas. Supabase also has a Free plan but quotas and project lifecycle rules can change; a backend is **not automatically paid**. A database integration is optional, not justified for v1. No free tier is an unconditional lifetime uptime guarantee.
+
+## Save format v3 (current)
+Progress is split in two. `aqua-vault:v3:profile` holds the cross-level profile: current level, XP, per-level record (completed, skipped, stars, best time and spend), tool cards seen, and all settings (sound, volume, reduced motion, speed, quality, text size). `aqua-vault:v3:level:<id>:a|b` holds one level's map state in two alternating generations (the state includes latched objectives, stats and the scripted-weather step). Terrain, heights, tool lists and footprints always come from the current level definition, never from a save. A v2 profile and village save are upgraded once on first load; the old keys are deleted only after every v3 write succeeded, and old lesson saves are dropped because their maps changed.

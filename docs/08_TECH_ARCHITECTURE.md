@@ -1,7 +1,7 @@
 # Technical Architecture — Static-First Next.js
 
 ## Selection
-Next.js (App Router) + TypeScript + React for shell/UI, **HTML Canvas 2D or optimized SVG** for game world. Avoid engines, massive physics libs and custom hosted backend. This is a deliberate change from the earlier vanilla-only concept: the user explicitly approved Next.js for expansion.
+Next.js (App Router) + TypeScript + React for the shell and UI. The world is drawn by a `GameRenderer` (`src/game/render/types.ts`): **vanilla `three`** (WebGL, loaded with a dynamic `import()` on the client only) is the default; the Canvas 2D renderer is the fallback when WebGL is unavailable or the context is lost twice (`?renderer=2d` or Settings → Classic 2D forces it). No game engine, physics library or backend. `three` is the only runtime dependency beyond Next/React (about +170 KB gzipped, outside the first-load bundle). The simulation never imports rendering code.
 
 ## Client-side boundaries
 Use `'use client'` for game renderer and controls. The canonical simulation is framework-agnostic pure TypeScript. React displays derived snapshots / panels; never store all 500 tile objects in React state at 60fps. Avoid server actions, remote auth or API calls in MVP. `output: 'export'` can be used if compatible with project setup; do not import Node-only modules into client bundles.
